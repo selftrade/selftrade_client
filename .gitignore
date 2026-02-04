@@ -32,3 +32,4 @@ Thumbs.db
 client.log
 selftrade_client.log
 settings.ini
+positions.json
