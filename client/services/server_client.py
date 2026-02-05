@@ -28,7 +28,7 @@ class ServerClient:
         try:
             response = self.session.post(
                 f"{self.server_url}/login",
-                json={"username": username, "password": password},
+                data={"username": username, "password": password},
                 timeout=10
             )
             response.raise_for_status()
