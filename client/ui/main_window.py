@@ -3012,7 +3012,8 @@ class MainWindow(QMainWindow):
                         if isinstance(trade_time, str):
                             try:
                                 trade_dt = datetime.fromisoformat(trade_time.replace('Z', '+00:00'))
-                            except:
+                            except (ValueError, TypeError):
+                                # Failed to parse timestamp, skip this trade
                                 continue
                         elif isinstance(trade_time, (int, float)):
                             trade_dt = datetime.fromtimestamp(trade_time)

@@ -60,18 +60,8 @@ class ExchangeClient:
             self.markets = self.exchange.load_markets()
             self.connected = True
 
-            # Log available USDT pairs for debugging
-            usdt_pairs = [s for s in self.markets.keys() if s.endswith('/USDT')]
-            logger.info(f"Connected to {self.exchange_name} exchange - {len(usdt_pairs)} USDT pairs available")
-
-            # Check for common trading pairs
-            common_pairs = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
-            for pair in common_pairs:
-                if pair in self.markets:
-                    market = self.markets[pair]
-                    logger.info(f"  {pair}: id={market.get('id')}, active={market.get('active', True)}")
-                else:
-                    logger.warning(f"  {pair}: NOT FOUND on {self.exchange_name}")
+            # Exchange connection successful
+            logger.info(f"Connected to {self.exchange_name} exchange")
 
             return True
 

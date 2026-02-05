@@ -112,6 +112,34 @@ class PositionManager:
             self._save_positions()
             return True
 
+    def update_stop_loss(self, pair: str, new_sl: float, reason: str) -> bool:
+        """
+        Update stop loss for a position (thread-safe).
+
+        Args:
+            pair: Trading pair
+            new_sl: New stop loss price
+            reason: Reason for update (e.g., "trailing", "breakeven")
+
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        with self._lock:
+            pair = pair.upper()
+            if pair not in self.positions:
+                logger.warning(f"Cannot update SL for {pair}: no position exists")
+                return False
+
+            position = self.positions[pair]
+            old_sl = position['stop_loss']
+            position['stop_loss'] = new_sl
+            position['sl_update_reason'] = reason
+            position['sl_update_time'] = datetime.utcnow().isoformat()
+
+            self._save_positions()
+            logger.info(f"{pair} SL updated ({reason}): ${old_sl:.2f} -> ${new_sl:.2f}")
+            return True
+
     def get_thesis(self, pair: str) -> Optional[str]:
         """Get current thesis for a position (may differ from actual holding)"""
         position = self.get_position(pair)
@@ -420,7 +448,9 @@ class PositionManager:
 
                     if exit_time > one_week_ago:
                         weekly_trades.append(trade)
-                except:
+                except (ValueError, TypeError, AttributeError):
+                    # Failed to parse exit time, skip this trade
+                    logger.debug(f"Failed to parse exit_time: {exit_time_str}")
                     pass
 
         # Calculate daily P&L
@@ -497,7 +527,9 @@ class PositionManager:
                     exit_time = datetime.fromisoformat(exit_time_str)
                     if exit_time >= today_start:
                         today_trades.append(trade)
-                except:
+                except (ValueError, TypeError, AttributeError):
+                    # Failed to parse exit time, skip this trade
+                    logger.debug(f"Failed to parse exit_time for today's summary: {exit_time_str}")
                     pass
 
         total_pnl = sum(t.get('unrealized_pnl_net', t.get('unrealized_pnl', 0)) for t in today_trades)

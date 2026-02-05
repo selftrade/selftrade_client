@@ -38,7 +38,7 @@ class ServerClient:
             self.api_key = data.get("user", {}).get("api_key")
             self.session.headers.update({"Authorization": f"Bearer {self.access_token}"})
 
-            logger.info(f"Logged in successfully as {username}")
+            logger.info("Login successful")
             return data
 
         except requests.RequestException as e:
@@ -55,7 +55,7 @@ class ServerClient:
             )
             response.raise_for_status()
             data = response.json()
-            logger.info(f"Registered successfully as {username}")
+            logger.info("Registration successful")
             return data
 
         except requests.RequestException as e:
@@ -108,7 +108,8 @@ class ServerClient:
                 try:
                     error_data = response.json()
                     error_detail = error_data.get('detail', 'API key expired or invalid')
-                except:
+                except (ValueError, KeyError, requests.JSONDecodeError):
+                    # Failed to parse error response, use default message
                     pass
                 raise SubscriptionExpiredError(error_detail)
 

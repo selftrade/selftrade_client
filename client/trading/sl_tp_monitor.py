@@ -129,7 +129,9 @@ class SLTPMonitor:
             hold_duration = (datetime.utcnow() - entry_time).total_seconds()
             hold_hours = hold_duration / 3600
             position_too_new = hold_duration < min_hold_seconds
-        except:
+        except (ValueError, TypeError, AttributeError):
+            # Failed to parse entry time, assume position is not too new
+            logger.debug(f"Failed to parse entry_time for {pair}: {entry_time_str}")
             position_too_new = False
             hold_hours = 0
 
@@ -414,20 +416,12 @@ class SLTPMonitor:
                     self._update_stop_loss(pair, trail_sl, "trailing")
 
     def _update_stop_loss(self, pair: str, new_sl: float, reason: str):
-        """Update stop loss in position manager"""
-        position = self.manager.get_position(pair)
-        if position:
-            old_sl = position['stop_loss']
-            position['stop_loss'] = new_sl
-            position['sl_update_reason'] = reason
-            position['sl_update_time'] = datetime.utcnow().isoformat()
+        """Update stop loss in position manager (thread-safe)"""
+        # Use position manager's thread-safe update method
+        success = self.manager.update_stop_loss(pair, new_sl, reason)
 
-            self.manager._save_positions()
-
-            logger.info(f"{pair} SL updated ({reason}): ${old_sl:.2f} -> ${new_sl:.2f}")
-
-            if self.on_sl_updated:
-                self.on_sl_updated(pair, new_sl, reason)
+        if success and self.on_sl_updated:
+            self.on_sl_updated(pair, new_sl, reason)
 
     def execute_exit(self, exit_info: Dict) -> Dict[str, Any]:
         """Execute an exit order"""

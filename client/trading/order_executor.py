@@ -374,6 +374,37 @@ class OrderExecutor:
                     logger.info(f"FLIP {pair}: {current_thesis.upper()} → {side.upper()} (NO TRADING FEE)")
 
                     if not dry_run:
+                        # SAFETY CHECK: Verify exchange balance matches position before flipping
+                        # Prevents SL/TP logic inversion if pending trades haven't settled
+                        position = self.manager.get_position(pair)
+                        if position:
+                            expected_qty = position.get('quantity', 0)
+                            base_asset = pair.replace('USDT', '').replace('USDC', '').replace('BUSD', '')
+
+                            try:
+                                # Verify actual exchange balance matches expected quantity
+                                actual_balance = self.exchange_client.get_asset_balance(base_asset)
+                                balance_diff_pct = abs(actual_balance - expected_qty) / expected_qty * 100 if expected_qty > 0 else 0
+
+                                if balance_diff_pct > 5.0:  # More than 5% difference
+                                    logger.error(
+                                        f"FLIP ABORTED: {pair} balance mismatch. "
+                                        f"Expected: {expected_qty:.6f}, Actual: {actual_balance:.6f} "
+                                        f"({balance_diff_pct:.1f}% diff). Pending trade may not have settled."
+                                    )
+                                    return {
+                                        'success': False,
+                                        'reason': f'Balance mismatch - expected {expected_qty:.6f}, got {actual_balance:.6f}. Wait for settlement.'
+                                    }
+                                elif balance_diff_pct > 1.0:
+                                    logger.warning(
+                                        f"FLIP WARNING: {pair} balance variance {balance_diff_pct:.1f}% "
+                                        f"(expected: {expected_qty:.6f}, actual: {actual_balance:.6f})"
+                                    )
+                            except Exception as e:
+                                logger.error(f"Failed to verify balance before flip: {e}")
+                                return {'success': False, 'reason': f'Balance verification failed: {e}'}
+
                         # Flip the position thesis without trading
                         flip_success = self.manager.flip_position(
                             pair=pair,
@@ -446,6 +477,22 @@ class OrderExecutor:
                     if delay_result['new_price']:
                         entry_price = delay_result['new_price']
 
+                        # SAFETY: Revalidate SL/TP after price update
+                        # Ensure SL is still below entry for LONG
+                        if stop_loss >= entry_price:
+                            logger.error(f"ABORT: After delay, SL ${stop_loss:.4f} >= new entry ${entry_price:.4f}")
+                            return {
+                                'success': False,
+                                'reason': f'SL invalid after price movement (SL={stop_loss:.4f}, entry={entry_price:.4f})'
+                            }
+                        # Ensure TP is still above entry for LONG
+                        if take_profit > 0 and take_profit <= entry_price:
+                            logger.error(f"ABORT: After delay, TP ${take_profit:.4f} <= new entry ${entry_price:.4f}")
+                            return {
+                                'success': False,
+                                'reason': f'TP invalid after price movement (TP={take_profit:.4f}, entry={entry_price:.4f})'
+                            }
+
                 # CHECK: Use FUTURES for LONG if enabled (lower fees: 0.04% vs 0.1%)
                 if PREFER_FUTURES and self.exchange.futures_enabled and self.exchange.futures_connected:
                     return self._execute_futures_long(pair, entry_price, stop_loss, take_profit, confidence, dry_run, regime)
@@ -478,6 +525,22 @@ class OrderExecutor:
                         if delay_result['new_price']:
                             entry_price = delay_result['new_price']
 
+                            # SAFETY: Revalidate SL/TP after price update
+                            # Ensure SL is still above entry for SHORT
+                            if stop_loss <= entry_price:
+                                logger.error(f"ABORT: After delay, SL ${stop_loss:.4f} <= new entry ${entry_price:.4f}")
+                                return {
+                                    'success': False,
+                                    'reason': f'SL invalid after price movement (SL={stop_loss:.4f}, entry={entry_price:.4f})'
+                                }
+                            # Ensure TP is still below entry for SHORT
+                            if take_profit > 0 and take_profit >= entry_price:
+                                logger.error(f"ABORT: After delay, TP ${take_profit:.4f} >= new entry ${entry_price:.4f}")
+                                return {
+                                    'success': False,
+                                    'reason': f'TP invalid after price movement (TP={take_profit:.4f}, entry={entry_price:.4f})'
+                                }
+
                     return self._execute_futures_short(pair, entry_price, stop_loss, take_profit, confidence, dry_run, regime)
 
                 # SPOT FALLBACK - Don't try to sell if we don't have the asset
@@ -506,6 +569,22 @@ class OrderExecutor:
                     # Update entry price if we got a new price
                     if delay_result['new_price']:
                         entry_price = delay_result['new_price']
+
+                        # SAFETY: Revalidate SL/TP after price update
+                        # For SELL (closing LONG position), SL should still be above entry
+                        if stop_loss <= entry_price:
+                            logger.error(f"ABORT: After delay, SL ${stop_loss:.4f} <= new entry ${entry_price:.4f}")
+                            return {
+                                'success': False,
+                                'reason': f'SL invalid after price movement (SL={stop_loss:.4f}, entry={entry_price:.4f})'
+                            }
+                        # Ensure TP is still below entry for SELL (SHORT)
+                        if take_profit > 0 and take_profit >= entry_price:
+                            logger.error(f"ABORT: After delay, TP ${take_profit:.4f} >= new entry ${entry_price:.4f}")
+                            return {
+                                'success': False,
+                                'reason': f'TP invalid after price movement (TP={take_profit:.4f}, entry={entry_price:.4f})'
+                            }
 
                 return self._execute_sell(pair, entry_price, stop_loss, take_profit, confidence, dry_run, regime)
 
@@ -1194,7 +1273,25 @@ class OrderExecutor:
                 qty_diff_pct = abs(actual_balance - stored_quantity) / stored_quantity * 100
                 if qty_diff_pct > 1.0:  # More than 1% difference
                     logger.warning(f"Quantity mismatch for {pair}: stored={stored_quantity:.8f}, actual={actual_balance:.8f} ({qty_diff_pct:.1f}% diff)")
+
+                    # SAFETY CHECK: Large mismatch might indicate API glitch or unsettled trade
+                    if qty_diff_pct > 10.0:  # More than 10% difference is suspicious
+                        logger.error(
+                            f"CRITICAL: Large quantity mismatch for {pair}! "
+                            f"Stored: {stored_quantity:.8f}, Exchange: {actual_balance:.8f} "
+                            f"({qty_diff_pct:.1f}% diff). This may indicate:\n"
+                            f"  1. Partial fill not yet settled\n"
+                            f"  2. Exchange API glitch\n"
+                            f"  3. Manual trade outside this client\n"
+                            f"Aborting close to prevent incorrect position size."
+                        )
+                        return {
+                            'success': False,
+                            'reason': f'Quantity mismatch too large ({qty_diff_pct:.1f}%) - verify exchange balance manually'
+                        }
+
                     # Sync position manager with actual quantity for accurate P&L
+                    logger.info(f"Updating {pair} position quantity to match exchange: {actual_balance:.8f}")
                     position['quantity'] = actual_balance
 
             # Use actual balance if available, otherwise fall back to stored

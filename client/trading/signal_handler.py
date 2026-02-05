@@ -59,8 +59,11 @@ class SignalHandler:
         if signal_age < -5:  # Allow 5s clock drift
             return {'valid': False, 'reason': "Signal timestamp in future"}
 
-        # Verify signature if present and API key is set
-        if 'signature' in signal and self.api_key:
+        # Verify signature if API key is configured
+        if self.api_key:
+            # SECURITY: Require signature when API key is configured
+            if 'signature' not in signal:
+                return {'valid': False, 'reason': "Missing signature (required when API key configured)"}
             if not self._verify_signature(signal):
                 return {'valid': False, 'reason': "Invalid signature"}
 
@@ -93,6 +96,31 @@ class SignalHandler:
                 # Auto-correct stop loss for short
                 logger.warning(f"Short signal has invalid SL ({stop_loss}), auto-correcting to 1.5% above entry")
                 signal['stop_loss'] = entry_price * 1.015  # Set 1.5% above
+
+        # Validate stop loss direction (CRITICAL SAFETY CHECK)
+        stop_loss = float(signal.get('stop_loss', 0))
+        if stop_loss > 0:
+            # Check SL is on correct side of entry
+            if side in ['long', 'buy']:
+                if stop_loss >= entry_price:
+                    return {
+                        'valid': False,
+                        'reason': f"Invalid LONG signal: SL ${stop_loss:.4f} must be BELOW entry ${entry_price:.4f}"
+                    }
+            elif side in ['short', 'sell']:
+                if stop_loss <= entry_price:
+                    return {
+                        'valid': False,
+                        'reason': f"Invalid SHORT signal: SL ${stop_loss:.4f} must be ABOVE entry ${entry_price:.4f}"
+                    }
+
+            # Check minimum SL distance (prevent instant trigger)
+            sl_distance_pct = abs(entry_price - stop_loss) / entry_price * 100
+            if sl_distance_pct < 0.3:  # Less than 0.3% is too tight
+                return {
+                    'valid': False,
+                    'reason': f"SL too close to entry ({sl_distance_pct:.2f}% - needs >0.3%)"
+                }
 
         # Validate take profit direction and minimum distance
         take_profit = float(signal.get('target_price') or signal.get('take_profit', 0))
@@ -130,19 +158,28 @@ class SignalHandler:
         return {'valid': True, 'reason': None}
 
     def _verify_signature(self, signal: Dict) -> bool:
-        """Verify HMAC signature of signal"""
+        """Verify HMAC signature of signal (REQUIRED when API key configured)"""
         if not self.api_key:
-            return True  # Skip verification if no API key
+            logger.warning("Signal verification skipped - no API key configured (security risk)")
+            return True  # Allow unsigned signals only when no API key is configured
 
         try:
             signature = signal.get('signature', '')
+            if not signature:
+                logger.error("Signal missing signature (required for authenticated signals)")
+                return False
+
             payload = f"{signal['pair']}|{signal['side']}|{signal['timestamp']}"
             expected = hmac.new(
                 self.api_key.encode(),
                 payload.encode(),
                 hashlib.sha256
             ).hexdigest()
-            return hmac.compare_digest(expected, signature)
+
+            is_valid = hmac.compare_digest(expected, signature)
+            if not is_valid:
+                logger.error(f"Signature mismatch for {signal.get('pair')} signal")
+            return is_valid
         except Exception as e:
             logger.error(f"Signature verification failed: {e}")
             return False
