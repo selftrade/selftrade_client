@@ -1189,9 +1189,19 @@ class OrderExecutor:
 
             logger.info(f"Actual exchange balance for {pair}: {actual_balance}")
 
+            # Detect and log quantity mismatch (helps debug partial fill issues)
+            if actual_balance > 0 and stored_quantity > 0:
+                qty_diff_pct = abs(actual_balance - stored_quantity) / stored_quantity * 100
+                if qty_diff_pct > 1.0:  # More than 1% difference
+                    logger.warning(f"Quantity mismatch for {pair}: stored={stored_quantity:.8f}, actual={actual_balance:.8f} ({qty_diff_pct:.1f}% diff)")
+                    # Sync position manager with actual quantity for accurate P&L
+                    position['quantity'] = actual_balance
+
             # Use actual balance if available, otherwise fall back to stored
             if actual_balance > 0:
-                quantity = actual_balance * 0.999  # Sell 99.9% to avoid dust issues
+                # Sell 100% instead of 99.9% to avoid dust accumulation
+                # Use floor to ensure we don't oversell
+                quantity = actual_balance
             elif stored_quantity > 0:
                 quantity = stored_quantity
             else:

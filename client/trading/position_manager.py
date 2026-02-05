@@ -1,5 +1,6 @@
 # client/trading/position_manager.py - Active position tracking
 import logging
+import threading
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 import json
@@ -15,12 +16,13 @@ logger = logging.getLogger(__name__)
 
 
 class PositionManager:
-    """Manage active trading positions"""
+    """Manage active trading positions with thread-safe operations"""
 
     def __init__(self, persist_file: str = "positions.json"):
         self.positions: Dict[str, Dict[str, Any]] = {}
         self.persist_file = persist_file
         self.trade_history: List[Dict] = []
+        self._lock = threading.RLock()  # Reentrant lock for thread safety
 
         # Load persisted positions
         self._load_positions()
@@ -37,33 +39,34 @@ class PositionManager:
         exchange: str = "binance",
         market: str = "spot"
     ):
-        """Add a new position (spot or futures)"""
-        # Calculate entry fee
-        entry_fee = entry_price * quantity * get_trading_fee(exchange)
+        """Add a new position (spot or futures) - thread-safe"""
+        with self._lock:
+            # Calculate entry fee
+            entry_fee = entry_price * quantity * get_trading_fee(exchange)
 
-        self.positions[pair.upper()] = {
-            'pair': pair.upper(),
-            'side': side.lower(),           # Actual holding: 'long' = bought asset
-            'thesis': side.lower(),          # Current thesis: can flip without trading
-            'thesis_entry': entry_price,     # Entry price for current thesis
-            'entry_price': entry_price,      # Original buy price
-            'market': market,                # 'spot' or 'futures'
-            'quantity': quantity,
-            'stop_loss': stop_loss,
-            'take_profit': take_profit,
-            'order_id': order_id,
-            'exchange': exchange,
-            'entry_fee': entry_fee,
-            'entry_time': datetime.utcnow().isoformat(),
-            'flip_count': 0,                 # Track how many times position was flipped
-            'unrealized_pnl': 0,
-            'unrealized_pnl_pct': 0,
-            'unrealized_pnl_net': 0,  # P&L after fees
-        }
+            self.positions[pair.upper()] = {
+                'pair': pair.upper(),
+                'side': side.lower(),           # Actual holding: 'long' = bought asset
+                'thesis': side.lower(),          # Current thesis: can flip without trading
+                'thesis_entry': entry_price,     # Entry price for current thesis
+                'entry_price': entry_price,      # Original buy price
+                'market': market,                # 'spot' or 'futures'
+                'quantity': quantity,
+                'stop_loss': stop_loss,
+                'take_profit': take_profit,
+                'order_id': order_id,
+                'exchange': exchange,
+                'entry_fee': entry_fee,
+                'entry_time': datetime.utcnow().isoformat(),
+                'flip_count': 0,                 # Track how many times position was flipped
+                'unrealized_pnl': 0,
+                'unrealized_pnl_pct': 0,
+                'unrealized_pnl_net': 0,  # P&L after fees
+            }
 
-        market_label = f"[{market.upper()}]" if market != "spot" else ""
-        logger.info(f"Position added: {pair} {side} {quantity:.6f} @ ${entry_price:.2f} {market_label} (fee: ${entry_fee:.4f})")
-        self._save_positions()
+            market_label = f"[{market.upper()}]" if market != "spot" else ""
+            logger.info(f"Position added: {pair} {side} {quantity:.6f} @ ${entry_price:.2f} {market_label} (fee: ${entry_fee:.4f})")
+            self._save_positions()
 
     def flip_position(
         self,
@@ -74,7 +77,7 @@ class PositionManager:
         new_take_profit: float
     ) -> bool:
         """
-        Flip position thesis WITHOUT trading (saves fees).
+        Flip position thesis WITHOUT trading (saves fees) - thread-safe.
 
         Example: Have LONG (bought BTC), flip to SHORT thesis
         - Still hold BTC, but now betting price goes DOWN
@@ -84,29 +87,30 @@ class PositionManager:
 
         Returns True if flipped successfully.
         """
-        pair = pair.upper()
-        if pair not in self.positions:
-            logger.warning(f"Cannot flip {pair}: no position exists")
-            return False
+        with self._lock:
+            pair = pair.upper()
+            if pair not in self.positions:
+                logger.warning(f"Cannot flip {pair}: no position exists")
+                return False
 
-        position = self.positions[pair]
-        old_thesis = position.get('thesis', position['side'])
+            position = self.positions[pair]
+            old_thesis = position.get('thesis', position['side'])
 
-        if old_thesis == new_thesis.lower():
-            logger.info(f"{pair} already has {new_thesis} thesis, updating SL/TP only")
-        else:
-            logger.info(f"FLIP {pair}: {old_thesis.upper()} → {new_thesis.upper()} (NO FEE)")
+            if old_thesis == new_thesis.lower():
+                logger.info(f"{pair} already has {new_thesis} thesis, updating SL/TP only")
+            else:
+                logger.info(f"FLIP {pair}: {old_thesis.upper()} → {new_thesis.upper()} (NO FEE)")
 
-        # Update thesis and levels
-        position['thesis'] = new_thesis.lower()
-        position['thesis_entry'] = new_entry
-        position['stop_loss'] = new_stop_loss
-        position['take_profit'] = new_take_profit
-        position['flip_count'] = position.get('flip_count', 0) + 1
-        position['last_flip_time'] = datetime.utcnow().isoformat()
+            # Update thesis and levels
+            position['thesis'] = new_thesis.lower()
+            position['thesis_entry'] = new_entry
+            position['stop_loss'] = new_stop_loss
+            position['take_profit'] = new_take_profit
+            position['flip_count'] = position.get('flip_count', 0) + 1
+            position['last_flip_time'] = datetime.utcnow().isoformat()
 
-        self._save_positions()
-        return True
+            self._save_positions()
+            return True
 
     def get_thesis(self, pair: str) -> Optional[str]:
         """Get current thesis for a position (may differ from actual holding)"""
@@ -116,92 +120,97 @@ class PositionManager:
         return None
 
     def remove_position(self, pair: str) -> Optional[Dict]:
-        """Remove a position and add to history"""
-        pair = pair.upper()
-        if pair in self.positions:
-            position = self.positions.pop(pair)
+        """Remove a position and add to history - thread-safe"""
+        with self._lock:
+            pair = pair.upper()
+            if pair in self.positions:
+                position = self.positions.pop(pair)
 
-            # Add to trade history
-            position['exit_time'] = datetime.utcnow().isoformat()
-            self.trade_history.append(position)
+                # Add to trade history
+                position['exit_time'] = datetime.utcnow().isoformat()
+                self.trade_history.append(position)
 
-            logger.info(f"Position removed: {pair}")
-            self._save_positions()
-            return position
-        return None
+                logger.info(f"Position removed: {pair}")
+                self._save_positions()
+                return position
+            return None
 
     def get_position(self, pair: str) -> Optional[Dict]:
-        """Get position for a pair"""
-        return self.positions.get(pair.upper())
+        """Get position for a pair - thread-safe"""
+        with self._lock:
+            pos = self.positions.get(pair.upper())
+            return pos.copy() if pos else None
 
     def get_all_positions(self) -> Dict[str, Dict]:
-        """Get all active positions"""
-        return self.positions.copy()
+        """Get all active positions - thread-safe"""
+        with self._lock:
+            return {k: v.copy() for k, v in self.positions.items()}
 
     def has_position(self, pair: str) -> bool:
-        """Check if position exists for pair"""
-        return pair.upper() in self.positions
+        """Check if position exists for pair - thread-safe"""
+        with self._lock:
+            return pair.upper() in self.positions
 
     def update_unrealized_pnl(self, pair: str, current_price: float):
-        """Update unrealized P&L for a position based on THESIS (including fees)"""
-        pair = pair.upper()
-        if pair not in self.positions:
-            return
+        """Update unrealized P&L for a position based on THESIS (including fees) - thread-safe"""
+        with self._lock:
+            pair = pair.upper()
+            if pair not in self.positions:
+                return
 
-        position = self.positions[pair]
-        # Use THESIS entry for P&L calculation (not original buy price)
-        thesis = position.get('thesis', position['side']).lower()
-        thesis_entry = position.get('thesis_entry', position['entry_price'])
-        quantity = position['quantity']
-        exchange = position.get('exchange', 'binance')
-        entry_fee = position.get('entry_fee', 0)
+            position = self.positions[pair]
+            # Use THESIS entry for P&L calculation (not original buy price)
+            thesis = position.get('thesis', position['side']).lower()
+            thesis_entry = position.get('thesis_entry', position['entry_price'])
+            quantity = position['quantity']
+            exchange = position.get('exchange', 'binance')
+            entry_fee = position.get('entry_fee', 0)
 
-        # Calculate gross P&L based on THESIS direction
-        if thesis in ['long', 'buy']:
-            pnl_gross = (current_price - thesis_entry) * quantity
-            pnl_pct_gross = ((current_price - thesis_entry) / thesis_entry) * 100
-        else:  # SHORT thesis
-            pnl_gross = (thesis_entry - current_price) * quantity
-            pnl_pct_gross = ((thesis_entry - current_price) / thesis_entry) * 100
+            # Calculate gross P&L based on THESIS direction
+            if thesis in ['long', 'buy']:
+                pnl_gross = (current_price - thesis_entry) * quantity
+                pnl_pct_gross = ((current_price - thesis_entry) / thesis_entry) * 100
+            else:  # SHORT thesis
+                pnl_gross = (thesis_entry - current_price) * quantity
+                pnl_pct_gross = ((thesis_entry - current_price) / thesis_entry) * 100
 
-        # Calculate exit fee (estimated) - only pay this once when actually exiting
-        exit_fee = current_price * quantity * get_trading_fee(exchange)
+            # Calculate exit fee (estimated) - only pay this once when actually exiting
+            exit_fee = current_price * quantity * get_trading_fee(exchange)
 
-        # For flipped positions, we only pay exit fee (no entry fee for the flip)
-        flip_count = position.get('flip_count', 0)
-        if flip_count > 0:
-            # Position was flipped - only count exit fee
-            total_fees = exit_fee
-        else:
-            # Original position - count entry + exit fee
+            # Total fees = entry fee (already paid when we bought) + exit fee (will pay when we sell)
+            # This is the same regardless of how many times we flipped the thesis
+            # Flipping thesis doesn't incur trading fees - only actual trades do
             total_fees = entry_fee + exit_fee
 
-        # Net P&L = Gross P&L - Total Fees
-        pnl_net = pnl_gross - total_fees
-        position_value = thesis_entry * quantity
-        pnl_pct_net = (pnl_net / position_value) * 100 if position_value > 0 else 0
+            # Net P&L = Gross P&L - Total Fees
+            pnl_net = pnl_gross - total_fees
+            position_value = thesis_entry * quantity
+            pnl_pct_net = (pnl_net / position_value) * 100 if position_value > 0 else 0
 
-        position['unrealized_pnl'] = round(pnl_gross, 4)
-        position['unrealized_pnl_pct'] = round(pnl_pct_gross, 2)
-        position['unrealized_pnl_net'] = round(pnl_net, 4)
-        position['unrealized_pnl_pct_net'] = round(pnl_pct_net, 2)
-        position['current_price'] = current_price
-        position['estimated_fees'] = round(total_fees, 4)
+            position['unrealized_pnl'] = round(pnl_gross, 4)
+            position['unrealized_pnl_pct'] = round(pnl_pct_gross, 2)
+            position['unrealized_pnl_net'] = round(pnl_net, 4)
+            position['unrealized_pnl_pct_net'] = round(pnl_pct_net, 2)
+            position['current_price'] = current_price
+            position['estimated_fees'] = round(total_fees, 4)
 
     def get_total_exposure(self) -> float:
-        """Get total USDT exposure across all positions"""
-        total = 0
-        for position in self.positions.values():
-            total += position['entry_price'] * position['quantity']
-        return total
+        """Get total USDT exposure across all positions - thread-safe"""
+        with self._lock:
+            total = 0
+            for position in self.positions.values():
+                total += position['entry_price'] * position['quantity']
+            return total
 
     def get_position_count(self) -> int:
-        """Get number of open positions"""
-        return len(self.positions)
+        """Get number of open positions - thread-safe"""
+        with self._lock:
+            return len(self.positions)
 
     def get_total_unrealized_pnl(self) -> float:
-        """Get total unrealized P&L"""
-        return sum(p.get('unrealized_pnl', 0) for p in self.positions.values())
+        """Get total unrealized P&L - thread-safe"""
+        with self._lock:
+            return sum(p.get('unrealized_pnl', 0) for p in self.positions.values())
 
     def get_trade_stats(self) -> Dict[str, Any]:
         """Get trading statistics from history"""

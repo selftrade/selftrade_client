@@ -94,6 +94,29 @@ class SignalHandler:
                 logger.warning(f"Short signal has invalid SL ({stop_loss}), auto-correcting to 1.5% above entry")
                 signal['stop_loss'] = entry_price * 1.015  # Set 1.5% above
 
+        # Validate take profit direction and minimum distance
+        take_profit = float(signal.get('target_price') or signal.get('take_profit', 0))
+        if take_profit > 0:
+            min_tp_distance_pct = 0.005  # Minimum 0.5% distance from entry
+
+            if side in ['long', 'buy']:
+                if take_profit <= entry_price * (1 + min_tp_distance_pct):
+                    # Auto-correct TP for long - set to 2x SL distance or 3% above entry
+                    sl_distance = entry_price - float(signal.get('stop_loss', entry_price * 0.985))
+                    corrected_tp = entry_price + max(sl_distance * 2, entry_price * 0.03)
+                    logger.warning(f"Long signal has invalid TP ({take_profit}), auto-correcting to ${corrected_tp:.4f}")
+                    signal['target_price'] = corrected_tp
+                    signal['take_profit'] = corrected_tp
+
+            if side in ['short', 'sell']:
+                if take_profit >= entry_price * (1 - min_tp_distance_pct):
+                    # Auto-correct TP for short - set to 2x SL distance or 3% below entry
+                    sl_distance = float(signal.get('stop_loss', entry_price * 1.015)) - entry_price
+                    corrected_tp = entry_price - max(sl_distance * 2, entry_price * 0.03)
+                    logger.warning(f"Short signal has invalid TP ({take_profit}), auto-correcting to ${corrected_tp:.4f}")
+                    signal['target_price'] = corrected_tp
+                    signal['take_profit'] = corrected_tp
+
         # Validate confidence
         confidence = float(signal.get('confidence', 0.5))
         if confidence < 0 or confidence > 1:
