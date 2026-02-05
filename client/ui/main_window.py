@@ -599,6 +599,7 @@ class MainWindow(QMainWindow):
         self.connected_server = False
         self.connected_exchange = False
         self.auto_trade = False
+        self._subscription_expired_shown = False  # Prevent multiple dialogs
         self.user_data = {}
         self.signals_remaining = 0
         self.signals_used = 0
@@ -1688,6 +1689,11 @@ class MainWindow(QMainWindow):
 
     def _show_subscription_expired(self, error_message: str):
         """Show subscription expired dialog with upgrade link"""
+        # Prevent showing dialog multiple times
+        if self._subscription_expired_shown:
+            return
+        self._subscription_expired_shown = True
+
         import webbrowser
 
         # Update signal display to show expired message
@@ -1803,6 +1809,7 @@ class MainWindow(QMainWindow):
                 api_key = result['api_key']
 
                 self.connected_server = True
+                self._subscription_expired_shown = False  # Reset for new login
                 self.signal_handler.set_api_key(api_key)
 
                 user = login_result.get('user', {})

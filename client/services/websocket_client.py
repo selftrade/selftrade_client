@@ -33,9 +33,14 @@ class WebSocketClient:
         # Subscriptions
         self.subscribed_pairs: List[str] = []
 
+        # Flag to prevent reconnection after subscription expiry
+        self._subscription_expired = False
+
     def set_api_key(self, api_key: str):
         """Set API key for authenticated connection"""
         self.api_key = api_key
+        # Reset subscription expired flag for new API key
+        self._subscription_expired = False
 
     def connect(self, pairs: List[str] = None):
         """Start WebSocket connection in background thread"""
@@ -72,7 +77,7 @@ class WebSocketClient:
         if self.api_key:
             extra_headers['X-API-Key'] = self.api_key
 
-        while self.running:
+        while self.running and not self._subscription_expired:
             try:
                 async with websockets.connect(self.ws_url, extra_headers=extra_headers) as ws:
                     self.websocket = ws
@@ -95,6 +100,9 @@ class WebSocketClient:
             except websockets.ConnectionClosed as e:
                 self.connected = False
                 logger.warning(f"WebSocket connection closed: {e}")
+                # Don't reconnect if subscription expired
+                if self._subscription_expired:
+                    break
                 if self.on_disconnect:
                     self.on_disconnect(str(e))
 
@@ -104,8 +112,8 @@ class WebSocketClient:
                 if self.on_error:
                     self.on_error(e)
 
-            # Reconnect delay
-            if self.running:
+            # Reconnect delay - but not if subscription expired
+            if self.running and not self._subscription_expired:
                 logger.info("Reconnecting in 5 seconds...")
                 await asyncio.sleep(5)
 
@@ -158,7 +166,9 @@ class WebSocketClient:
                 self.on_error(Exception(error_msg))
 
         elif msg_type == 'unauthorized' or msg_type == 'subscription_expired':
-            # API key expired or invalid
+            # API key expired or invalid - stop reconnection attempts
+            self._subscription_expired = True
+            self.running = False  # Stop the connection loop
             error_msg = data.get('message', 'Subscription expired or API key invalid')
             logger.warning(f"Subscription expired: {error_msg}")
             if self.on_subscription_expired:
