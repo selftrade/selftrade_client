@@ -121,10 +121,6 @@ class ServerClient:
             raise
 
 
-class SubscriptionExpiredError(Exception):
-    """Raised when API key is expired or invalid"""
-    pass
-
     def use_signal(self) -> Dict[str, Any]:
         """Decrement signal count after trade"""
         if not self.api_key:
@@ -176,3 +172,8 @@ class SubscriptionExpiredError(Exception):
             return response.status_code == 200
         except Exception:
             return False
+
+
+class SubscriptionExpiredError(Exception):
+    """Raised when API key is expired or invalid"""
+    pass
