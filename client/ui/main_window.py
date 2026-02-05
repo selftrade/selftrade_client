@@ -2237,15 +2237,40 @@ class MainWindow(QMainWindow):
 
         self.signal_frame.setStyleSheet(self.signal_frame.styleSheet())
 
-        self.entry_label.setText(f"📍 Entry: ${entry:,.2f}")
-        self.sl_label.setText(f"🛑 Stop Loss: ${stop:,.2f}")
-        self.tp_label.setText(f"🎯 Take Profit: ${target:,.2f}")
+        # For HOLD signals, show market analysis instead of trade prices
+        if side == 'HOLD':
+            reason = signal.get('reason', 'Analyzing market...')
+            trend = signal.get('trend', 'unknown')
+            market_status = signal.get('market_status', '')
+            indicators = signal.get('indicators', {})
 
-        conf_color = '#00d4aa' if confidence >= 0.7 else '#ffd93d' if confidence >= 0.5 else '#ff6b6b'
-        self.conf_label.setText(f"📊 Confidence: {confidence:.0%}")
-        self.conf_label.setStyleSheet(f"font-size: 14px; color: {conf_color}; font-weight: 600;")
+            # Show market info instead of empty prices
+            current_price = indicators.get('current_price', 0)
+            rsi = indicators.get('rsi', 0)
+            adx = indicators.get('adx', 0)
+            volume_ratio = indicators.get('volume_ratio', 0)
 
-        self.regime_label.setText(f"📈 Regime: {regime}")
+            self.entry_label.setText(f"💰 Price: ${current_price:,.2f}" if current_price else "📍 Entry: --")
+            self.sl_label.setText(f"📊 RSI: {rsi:.0f} | ADX: {adx:.0f}" if rsi else "🛑 Stop Loss: --")
+            self.tp_label.setText(f"📈 Trend: {trend.upper()}" if trend else "🎯 Take Profit: --")
+
+            # Show reason in regime label
+            self.regime_label.setText(f"💡 {reason[:50]}" if reason else f"📈 Regime: {regime}")
+
+            # Show volume info instead of confidence for hold signals
+            if volume_ratio:
+                vol_status = "High" if volume_ratio > 1.5 else "Low" if volume_ratio < 0.5 else "Normal"
+                self.conf_label.setText(f"📊 Volume: {vol_status} ({volume_ratio:.1f}x)")
+                self.conf_label.setStyleSheet("font-size: 14px; color: #808090; font-weight: 600;")
+        else:
+            self.entry_label.setText(f"📍 Entry: ${entry:,.2f}")
+            self.sl_label.setText(f"🛑 Stop Loss: ${stop:,.2f}")
+            self.tp_label.setText(f"🎯 Take Profit: ${target:,.2f}")
+            self.regime_label.setText(f"📈 Regime: {regime}")
+
+            conf_color = '#00d4aa' if confidence >= 0.7 else '#ffd93d' if confidence >= 0.5 else '#ff6b6b'
+            self.conf_label.setText(f"📊 Confidence: {confidence:.0%}")
+            self.conf_label.setStyleSheet(f"font-size: 14px; color: {conf_color}; font-weight: 600;")
 
         # Check executability
         can_execute = False

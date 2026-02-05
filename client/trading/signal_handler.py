@@ -226,6 +226,34 @@ class SignalHandler:
         confidence = signal.get('confidence', 0)
         regime = signal.get('regime', 'UNKNOWN')
 
+        # For HOLD signals, show market analysis instead of trade details
+        if side.lower() == 'hold':
+            reason = signal.get('reason', 'Analyzing market...')
+            trend = signal.get('trend', '')
+            market_status = signal.get('market_status', '')
+            indicators = signal.get('indicators', {})
+
+            # Build informative hold message
+            parts = [f"{pair} HOLD"]
+            if regime and regime not in ['HOLD', 'UNKNOWN', 'ANALYZING']:
+                parts.append(f"Regime: {regime}")
+            if trend:
+                parts.append(f"Trend: {trend}")
+            if reason:
+                parts.append(f"| {reason}")
+
+            # Add key indicators if available
+            if indicators:
+                rsi = indicators.get('rsi')
+                price = indicators.get('current_price')
+                if rsi:
+                    parts.append(f"| RSI: {rsi:.0f}")
+                if price:
+                    parts.append(f"| Price: ${price:,.2f}")
+
+            return " ".join(parts)
+
+        # For trade signals, show full details
         return (f"{pair} {side.upper()} | Entry: ${entry:.2f} | "
                 f"SL: ${stop:.2f} | TP: ${target:.2f} | "
                 f"Conf: {confidence:.0%} | Regime: {regime}")
