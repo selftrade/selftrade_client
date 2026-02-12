@@ -23,10 +23,10 @@ class TrailingStopConfig:
     def __init__(
         self,
         enabled: bool = True,
-        activation_pct: float = 2.5,      # Activate trailing after 2.5% profit (let it breathe)
-        trail_pct: float = 0.5,            # Trail 0.5% behind peak
-        breakeven_pct: float = 1.5,        # Move SL to breakeven after 1.5% profit
-        breakeven_buffer_pct: float = 0.1  # Add 0.1% buffer above entry for breakeven
+        activation_pct: float = 3.5,      # Activate trailing after 3.5% profit (let it breathe)
+        trail_pct: float = 0.8,            # Trail 0.8% behind peak (wider to avoid noise)
+        breakeven_pct: float = 3.0,        # Move SL to breakeven after 3.0% profit (was 1.5% - fees ate profit)
+        breakeven_buffer_pct: float = 0.15  # Add 0.15% buffer above entry for breakeven
     ):
         self.enabled = enabled
         self.activation_pct = activation_pct
@@ -122,7 +122,7 @@ class SLTPMonitor:
         # SL is still checked immediately for protection
         from datetime import datetime
         entry_time_str = position.get('entry_time', '')
-        min_hold_seconds = 600  # Minimum 10 minutes before TP can trigger
+        min_hold_seconds = 180  # Minimum 3 minutes before TP can trigger (was 10 min - missed fast moves)
 
         try:
             entry_time = datetime.fromisoformat(entry_time_str)

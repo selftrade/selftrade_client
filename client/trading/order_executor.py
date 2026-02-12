@@ -807,9 +807,9 @@ class OrderExecutor:
         available_usdt_value = asset_info['usdt_value']
         current_price = asset_info.get('price', entry_price)
 
-        # Calculate optimal sell amount based on confidence and risk
-        # For sells, we sell a portion based on confidence
-        sell_percent = min(0.25 + (confidence * 0.5), 0.9)  # 25% to 75% based on confidence
+        # Sell most of position on exit signals - holding leftovers accumulates risk
+        # Higher confidence = sell more (50% minimum, 98% maximum)
+        sell_percent = min(0.50 + (confidence * 0.48), 0.98)  # 50% to 98% based on confidence
         quantity = available_amount * sell_percent
 
         # Ensure minimum trade value

@@ -83,17 +83,17 @@ class PositionSizer:
             # Risk LESS in choppy markets, more in strong trends
             regime_multiplier = 1.0
             if regime:
-                if regime in ['RANGING_EXTREME', 'LOW_VOLATILITY', 'SIDEWAYS']:
-                    regime_multiplier = 0.5  # Risk 50% less in choppy markets
-                    logger.debug(f"Regime {regime}: Reducing risk by 50%")
+                if regime in ['LOW_VOLATILITY', 'SIDEWAYS']:
+                    regime_multiplier = 0.8  # Was 0.5 - too small on small accounts, fees ate profit
+                elif regime in ['RANGING_EXTREME']:
+                    regime_multiplier = 0.7  # Was 0.5
                 elif regime in ['RANGING_NORMAL']:
-                    regime_multiplier = 0.7  # Risk 30% less in normal ranging
+                    regime_multiplier = 0.85  # Was 0.7
                 elif regime in ['TRENDING_UP_STRONG', 'TRENDING_DOWN_STRONG']:
                     regime_multiplier = 1.2  # Risk 20% more in strong trends
-                    logger.debug(f"Regime {regime}: Increasing risk by 20%")
                 elif regime in ['HIGH_VOLATILITY']:
-                    regime_multiplier = 0.6  # Risk 40% less in high volatility
-                    logger.debug(f"Regime {regime}: Reducing risk by 40%")
+                    regime_multiplier = 0.7  # Was 0.6
+                    logger.debug(f"Regime {regime}: Reducing risk by 30%")
 
             # Calculate risk per trade based on confidence AND regime
             effective_risk = self.risk_percent * max(confidence, 0.5) * regime_multiplier

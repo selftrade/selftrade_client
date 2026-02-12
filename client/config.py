@@ -30,7 +30,7 @@ MIN_CONFIDENCE_FOR_SPOT = 0.60  # Only open spot if confidence >60%
 
 # ===================== CIRCUIT BREAKERS (SAFETY) =====================
 # Pause trading if drawdown exceeds threshold
-MAX_DAILY_DRAWDOWN_PERCENT = 10.0  # Pause if lose 10% in 24h
+MAX_DAILY_DRAWDOWN_PERCENT = 15.0  # Pause if lose 15% in 24h (was 10% - too strict for small accounts)
 MAX_WEEKLY_DRAWDOWN_PERCENT = 30.0  # Pause if lose 30% in 7 days
 CIRCUIT_BREAKER_COOLDOWN_HOURS = 6  # Wait 6 hours before resuming
 MAX_CONSECUTIVE_LOSSES = 5  # Pause after 5 consecutive losses
@@ -155,11 +155,10 @@ SUPPORTED_PAIRS: List[str] = [
 # Pairs that are NOT supported or have issues on specific exchanges
 UNSUPPORTED_PAIRS: Dict[str, List[str]] = {
     "mexc": [
-        "BTCUSDT",    # MEXC spot API marks BTC/USDT as inactive - use other pairs
+        # BTCUSDT removed - it's the highest liquidity pair, works fine
         "SHIBUSDT",   # Often has API issues on MEXC
         "PEPEUSDT",   # Low liquidity / API issues
         "WIFUSDT",    # May not be listed or have issues
-        "APTUSDT",    # Check availability
     ],
     "bybit": [],
     "binance": [],
