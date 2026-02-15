@@ -808,8 +808,8 @@ class OrderExecutor:
         current_price = asset_info.get('price', entry_price)
 
         # Sell most of position on exit signals - holding leftovers accumulates risk
-        # Higher confidence = sell more (50% minimum, 98% maximum)
-        sell_percent = min(0.50 + (confidence * 0.48), 0.98)  # 50% to 98% based on confidence
+        # Always sell at least 90% to avoid leftover positions that bleed from fees
+        sell_percent = min(0.90 + (confidence * 0.08), 0.98)  # 90% to 98% based on confidence
         quantity = available_amount * sell_percent
 
         # Ensure minimum trade value

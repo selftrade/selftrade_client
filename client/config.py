@@ -20,13 +20,13 @@ MAX_RISK_PERCENT = 10.0
 MIN_TRADE_VALUE_USDT = 12.0  # Binance SPOT minimum notional is ~$5-10, use $12 for safety
 MIN_FUTURES_TRADE_VALUE = 6.0  # Binance FUTURES minimum notional is ~$5, use $6 for safety
 MAX_POSITION_PERCENT = 25.0  # Max 25% of portfolio in single position
-MIN_CONFIDENCE = 0.55  # Minimum confidence to execute trade (must match server)
+MIN_CONFIDENCE = 0.42  # Minimum confidence to execute trade (matches server's min_confidence)
 
 # ===================== POSITION LIMITS (SMALL ACCOUNT OPTIMIZATION) =====================
 # For accounts <$200, limit positions to reduce fee drag
 MAX_CONCURRENT_POSITIONS = 3  # Max 3 positions at a time
 PREFER_FUTURES = True  # Prefer futures over spot (0.04% vs 0.1% fees)
-MIN_CONFIDENCE_FOR_SPOT = 0.60  # Only open spot if confidence >60%
+MIN_CONFIDENCE_FOR_SPOT = 0.48  # Only open spot if confidence >48% (was 60% - blocked too many valid signals)
 
 # ===================== CIRCUIT BREAKERS (SAFETY) =====================
 # Pause trading if drawdown exceeds threshold
