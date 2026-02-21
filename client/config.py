@@ -141,14 +141,10 @@ SUPPORTED_PAIRS: List[str] = [
     "LINKUSDT",   # Chainlink - top oracle
     "LTCUSDT",    # Litecoin - established
     "TRXUSDT",    # Tron - high volume
-    "SHIBUSDT",   # Shiba Inu - popular meme
-    "PEPEUSDT",   # Pepe - trending meme
     "SUIUSDT",    # Sui - newer L1
     "NEARUSDT",   # Near Protocol
     "APTUSDT",    # Aptos - newer L1
-    "TONUSDT",    # TON - Telegram coin, very high volume
     "INJUSDT",    # Injective - popular DeFi
-    "WIFUSDT",    # dogwifhat - trending meme, high volume
 ]
 
 # ===================== EXCHANGE-SPECIFIC UNSUPPORTED PAIRS =====================

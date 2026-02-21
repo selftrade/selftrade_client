@@ -348,14 +348,14 @@ class PositionManager:
                 # For LONG thesis: SL must be below thesis_entry
                 if stop_loss >= thesis_entry:
                     old_sl = stop_loss
-                    position['stop_loss'] = thesis_entry * 0.98  # 2% below
+                    position['stop_loss'] = thesis_entry * 0.955  # 4.5% below (matches server MIN_SL_PERCENT)
                     logger.warning(f"FIXED {pair} LONG thesis SL: ${old_sl:.4f} -> ${position['stop_loss']:.4f}")
                     fixed_count += 1
 
                 # For LONG thesis: TP must be above thesis_entry
                 if take_profit <= thesis_entry:
                     old_tp = take_profit
-                    position['take_profit'] = thesis_entry * 1.04  # 4% above
+                    position['take_profit'] = thesis_entry * 1.1125  # 11.25% above (2.5:1 R:R with 4.5% SL)
                     logger.warning(f"FIXED {pair} LONG thesis TP: ${old_tp:.4f} -> ${position['take_profit']:.4f}")
                     fixed_count += 1
 
@@ -364,14 +364,14 @@ class PositionManager:
                 # For SHORT thesis: SL must be above thesis_entry
                 if stop_loss <= thesis_entry:
                     old_sl = stop_loss
-                    position['stop_loss'] = thesis_entry * 1.02  # 2% above
+                    position['stop_loss'] = thesis_entry * 1.045  # 4.5% above (matches server MIN_SL_PERCENT)
                     logger.warning(f"FIXED {pair} SHORT thesis SL: ${old_sl:.4f} -> ${position['stop_loss']:.4f}")
                     fixed_count += 1
 
                 # For SHORT thesis: TP must be below thesis_entry
                 if take_profit >= thesis_entry:
                     old_tp = take_profit
-                    position['take_profit'] = thesis_entry * 0.96  # 4% below
+                    position['take_profit'] = thesis_entry * 0.8875  # 11.25% below (2.5:1 R:R with 4.5% SL)
                     logger.warning(f"FIXED {pair} SHORT thesis TP: ${old_tp:.4f} -> ${position['take_profit']:.4f}")
                     fixed_count += 1
 
@@ -485,14 +485,30 @@ class PositionManager:
         }
 
         # CHECK 1: Daily drawdown
-        if daily_pnl_pct < -MAX_DAILY_DRAWDOWN_PERCENT:
+        # For small accounts (<$500), use dollar-based thresholds to avoid
+        # triggering circuit breaker on just 1-2 bad trades
+        if starting_balance < 500:
+            daily_max_loss = 25.0  # $25 max daily loss for small accounts
+            if daily_pnl < -daily_max_loss:
+                result['trading_allowed'] = False
+                result['reason'] = f"CIRCUIT BREAKER: Daily loss ${abs(daily_pnl):.2f} exceeds ${daily_max_loss} (small account)"
+                logger.error(result['reason'])
+                return result
+        elif daily_pnl_pct < -MAX_DAILY_DRAWDOWN_PERCENT:
             result['trading_allowed'] = False
             result['reason'] = f"CIRCUIT BREAKER: Daily drawdown {daily_pnl_pct:.1f}% exceeds -{MAX_DAILY_DRAWDOWN_PERCENT}%"
             logger.error(result['reason'])
             return result
 
         # CHECK 2: Weekly drawdown
-        if weekly_pnl_pct < -MAX_WEEKLY_DRAWDOWN_PERCENT:
+        if starting_balance < 500:
+            weekly_max_loss = 60.0  # $60 max weekly loss for small accounts
+            if weekly_pnl < -weekly_max_loss:
+                result['trading_allowed'] = False
+                result['reason'] = f"CIRCUIT BREAKER: Weekly loss ${abs(weekly_pnl):.2f} exceeds ${weekly_max_loss} (small account)"
+                logger.error(result['reason'])
+                return result
+        elif weekly_pnl_pct < -MAX_WEEKLY_DRAWDOWN_PERCENT:
             result['trading_allowed'] = False
             result['reason'] = f"CIRCUIT BREAKER: Weekly drawdown {weekly_pnl_pct:.1f}% exceeds -{MAX_WEEKLY_DRAWDOWN_PERCENT}%"
             logger.error(result['reason'])
