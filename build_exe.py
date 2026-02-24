@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """
-Build script to create SelfTrade Client .exe using PyInstaller.
+Build script to create SelfTrade Client .exe using Nuitka.
+
+Nuitka compiles Python to native C code, so antivirus software does NOT
+flag it as malware (unlike PyInstaller which bundles an interpreter).
+
+Prerequisites (Windows):
+    pip install nuitka ordered-set zstandard
+    # Also need a C compiler - Nuitka will auto-download MinGW64 if needed
 
 Usage:
     python build_exe.py
@@ -20,7 +27,6 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).parent
 DIST_DIR = ROOT_DIR / "dist"
-BUILD_DIR = ROOT_DIR / "build"
 APP_NAME = "SelfTrade-Setup"
 ENTRY_POINT = "client/main.py"
 
@@ -28,58 +34,81 @@ ENTRY_POINT = "client/main.py"
 SERVER_DOWNLOADS = Path("/opt/final_trading_with_client/static/downloads")
 
 
-def check_pyinstaller():
+def check_nuitka():
     try:
-        import PyInstaller
-        print(f"PyInstaller {PyInstaller.__version__} found")
-    except ImportError:
-        print("PyInstaller not found. Installing...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
+        result = subprocess.run(
+            [sys.executable, "-m", "nuitka", "--version"],
+            capture_output=True, text=True
+        )
+        print(f"Nuitka found: {result.stdout.strip().splitlines()[0]}")
+    except Exception:
+        print("Nuitka not found. Installing...")
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install",
+            "nuitka", "ordered-set", "zstandard"
+        ])
 
 
 def build():
-    check_pyinstaller()
+    check_nuitka()
 
-    print(f"\nBuilding {APP_NAME}.exe from {ENTRY_POINT}...")
+    DIST_DIR.mkdir(exist_ok=True)
+
+    print(f"\nBuilding {APP_NAME}.exe with Nuitka (native C compilation)...")
+    print("This will take several minutes on the first build.\n")
 
     cmd = [
-        sys.executable, "-m", "PyInstaller",
+        sys.executable, "-m", "nuitka",
+
+        # Output settings
+        "--standalone",
         "--onefile",
-        "--windowed",
-        "--name", APP_NAME,
-        "--clean",
-        # Include all client subpackages
-        "--hidden-import", "client.ui",
-        "--hidden-import", "client.ui.main_window",
-        "--hidden-import", "client.services",
-        "--hidden-import", "client.services.server_client",
-        "--hidden-import", "client.services.websocket_client",
-        "--hidden-import", "client.services.exchange_client",
-        "--hidden-import", "client.trading",
-        "--hidden-import", "client.trading.order_executor",
-        "--hidden-import", "client.trading.position_sizer",
-        "--hidden-import", "client.trading.position_manager",
-        "--hidden-import", "client.trading.signal_handler",
-        "--hidden-import", "client.trading.sl_tp_monitor",
-        "--hidden-import", "client.utils",
-        # PyQt6 hidden imports
-        "--hidden-import", "PyQt6.QtCore",
-        "--hidden-import", "PyQt6.QtWidgets",
-        "--hidden-import", "PyQt6.QtGui",
-        # CCXT for exchange connectivity
-        "--hidden-import", "ccxt",
-        "--hidden-import", "ccxt.binance",
-        "--hidden-import", "ccxt.mexc",
-        "--hidden-import", "ccxt.bybit",
-        # Other deps
-        "--hidden-import", "websockets",
-        "--hidden-import", "aiohttp",
-        "--hidden-import", "requests",
+        f"--output-filename={APP_NAME}.exe",
+        f"--output-dir={DIST_DIR}",
+
+        # Windows GUI app (no console window)
+        "--windows-disable-console",
+
+        # Company/product info embedded in .exe properties
+        "--company-name=SelfTrade",
+        "--product-name=SelfTrade Client",
+        "--product-version=1.0.0",
+        "--file-description=SelfTrade Desktop Trading Client",
+        "--copyright=SelfTrade 2024-2026",
+
+        # Enable Nuitka plugins for Qt and anti-bloat
+        "--enable-plugin=pyqt6",
+        "--enable-plugin=anti-bloat",
+
+        # Include packages that Nuitka might miss
+        "--include-package=client",
+        "--include-package=client.ui",
+        "--include-package=client.services",
+        "--include-package=client.trading",
+        "--include-package=client.utils",
+        "--include-package=ccxt",
+        "--include-package=websockets",
+        "--include-package=aiohttp",
+        "--include-package=requests",
+
+        # Follow imports within our code
+        "--follow-imports",
+
+        # Remove unnecessary modules to reduce size
+        "--nofollow-import-to=tkinter",
+        "--nofollow-import-to=unittest",
+        "--nofollow-import-to=test",
+        "--nofollow-import-to=setuptools",
+        "--nofollow-import-to=pip",
+        "--nofollow-import-to=distutils",
+
+        # Entry point
         ENTRY_POINT,
     ]
 
     subprocess.check_call(cmd, cwd=str(ROOT_DIR))
 
+    # Nuitka outputs to dist/ with onefile
     exe_path = DIST_DIR / f"{APP_NAME}.exe"
 
     if exe_path.exists():
@@ -95,7 +124,8 @@ def build():
         print(f"\nTo upload to GitHub Releases:")
         print(f"  gh release create v1.0.0 {exe_path} --repo selftrade/selftrade_client --title 'SelfTrade Client v1.0.0' --notes 'Desktop trading client'")
     else:
-        print("\nBuild failed - .exe not found")
+        print("\nBuild failed - .exe not found in dist/")
+        print("Check the Nuitka output above for errors.")
         sys.exit(1)
 
 
