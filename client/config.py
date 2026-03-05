@@ -81,6 +81,15 @@ PRECISION_RULES: Dict[str, Dict[str, Dict[str, int]]] = {
         "APTUSDT": {"price": 3, "qty": 2},
         "TONUSDT": {"price": 3, "qty": 2},
         "INJUSDT": {"price": 3, "qty": 2},
+        "BNBUSDT": {"price": 2, "qty": 3},
+        "DOTUSDT": {"price": 3, "qty": 2},
+        "ARBUSDT": {"price": 4, "qty": 1},
+        "OPUSDT":  {"price": 4, "qty": 1},
+        "FETUSDT": {"price": 5, "qty": 0},
+        "RENDERUSDT": {"price": 4, "qty": 1},
+        "WLDUSDT": {"price": 4, "qty": 1},
+        "BONKUSDT": {"price": 9, "qty": 0},
+        "FLOKIUSDT": {"price": 8, "qty": 0},
         "WIFUSDT": {"price": 4, "qty": 1},
         "DEFAULT": {"price": 6, "qty": 2},
     },
@@ -102,6 +111,15 @@ PRECISION_RULES: Dict[str, Dict[str, Dict[str, int]]] = {
         "APTUSDT": {"price": 3, "qty": 3},
         "TONUSDT": {"price": 4, "qty": 2},
         "INJUSDT": {"price": 3, "qty": 3},
+        "BNBUSDT": {"price": 2, "qty": 4},
+        "DOTUSDT": {"price": 3, "qty": 2},
+        "ARBUSDT": {"price": 4, "qty": 1},
+        "OPUSDT":  {"price": 4, "qty": 1},
+        "FETUSDT": {"price": 5, "qty": 0},
+        "RENDERUSDT": {"price": 4, "qty": 1},
+        "WLDUSDT": {"price": 4, "qty": 1},
+        "BONKUSDT": {"price": 9, "qty": 0},
+        "FLOKIUSDT": {"price": 8, "qty": 0},
         "WIFUSDT": {"price": 5, "qty": 1},
         "DEFAULT": {"price": 6, "qty": 3},
     },
@@ -123,40 +141,44 @@ PRECISION_RULES: Dict[str, Dict[str, Dict[str, int]]] = {
         "APTUSDT": {"price": 3, "qty": 3},
         "TONUSDT": {"price": 4, "qty": 2},
         "INJUSDT": {"price": 3, "qty": 3},
+        "BNBUSDT": {"price": 2, "qty": 4},
+        "DOTUSDT": {"price": 3, "qty": 2},
+        "ARBUSDT": {"price": 4, "qty": 1},
+        "OPUSDT":  {"price": 4, "qty": 1},
+        "FETUSDT": {"price": 5, "qty": 0},
+        "RENDERUSDT": {"price": 4, "qty": 1},
+        "WLDUSDT": {"price": 4, "qty": 1},
+        "BONKUSDT": {"price": 9, "qty": 0},
+        "FLOKIUSDT": {"price": 8, "qty": 0},
         "WIFUSDT": {"price": 5, "qty": 1},
         "DEFAULT": {"price": 6, "qty": 3},
     }
 }
 
 # ===================== SUPPORTED PAIRS =====================
-# High-liquidity pairs that work reliably on Binance, MEXC, and Bybit
+# Must mirror server/config.py SUPPORTED_PAIRS exactly
 SUPPORTED_PAIRS: List[str] = [
-    "BTCUSDT",    # Bitcoin - highest liquidity
-    "ETHUSDT",    # Ethereum - second highest
-    "XRPUSDT",    # Ripple - high volume
-    "SOLUSDT",    # Solana - very popular
-    "DOGEUSDT",   # Dogecoin - high volume meme
-    "ADAUSDT",    # Cardano - established
-    "AVAXUSDT",   # Avalanche - popular L1
-    "LINKUSDT",   # Chainlink - top oracle
-    "LTCUSDT",    # Litecoin - established
-    "TRXUSDT",    # Tron - high volume
-    "SUIUSDT",    # Sui - newer L1
-    "NEARUSDT",   # Near Protocol
-    "APTUSDT",    # Aptos - newer L1
-    "INJUSDT",    # Injective - popular DeFi
+    # Tier 1: Highest liquidity
+    "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "SOLUSDT", "DOGEUSDT",
+    # Tier 2: Established alts
+    "ADAUSDT", "AVAXUSDT", "LINKUSDT", "LTCUSDT", "TRXUSDT", "DOTUSDT",
+    "SUIUSDT", "NEARUSDT", "APTUSDT", "INJUSDT",
+    # Tier 3: Newer / narrative tokens
+    "ARBUSDT", "OPUSDT", "FETUSDT", "RENDERUSDT", "WLDUSDT",
+    # Tier 4: High-volatility meme coins
+    "PEPEUSDT", "SHIBUSDT", "WIFUSDT", "BONKUSDT", "FLOKIUSDT",
 ]
 
 # ===================== EXCHANGE-SPECIFIC UNSUPPORTED PAIRS =====================
 # Pairs that are NOT supported or have issues on specific exchanges
 UNSUPPORTED_PAIRS: Dict[str, List[str]] = {
     "mexc": [
-        # BTCUSDT removed - it's the highest liquidity pair, works fine
-        "SHIBUSDT",   # Often has API issues on MEXC
-        "PEPEUSDT",   # Low liquidity / API issues
-        "WIFUSDT",    # May not be listed or have issues
+        "APTUSDT",    # Not listed on MEXC
+        "WLDUSDT",    # Not listed on MEXC
     ],
-    "bybit": [],
+    "bybit": [
+        "WLDUSDT",    # Not listed on Bybit
+    ],
     "binance": [],
 }
 

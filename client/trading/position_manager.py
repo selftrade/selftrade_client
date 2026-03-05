@@ -516,10 +516,40 @@ class PositionManager:
 
         # CHECK 3: Consecutive losses
         if consecutive_losses >= MAX_CONSECUTIVE_LOSSES:
-            result['trading_allowed'] = False
-            result['reason'] = f"CIRCUIT BREAKER: {consecutive_losses} consecutive losses (max {MAX_CONSECUTIVE_LOSSES})"
-            logger.error(result['reason'])
-            return result
+            # Check if enough cooldown time has passed since the last loss
+            last_loss_time = None
+            for trade in reversed(self.trade_history):
+                pnl = trade.get('unrealized_pnl_net', trade.get('unrealized_pnl', 0))
+                if pnl < 0:
+                    exit_time_str = trade.get('exit_time')
+                    if exit_time_str:
+                        try:
+                            last_loss_time = datetime.fromisoformat(exit_time_str)
+                        except (ValueError, TypeError):
+                            pass
+                    break
+
+            if last_loss_time:
+                cooldown_elapsed = (now - last_loss_time).total_seconds() / 3600
+                if cooldown_elapsed >= CIRCUIT_BREAKER_COOLDOWN_HOURS:
+                    logger.info(
+                        f"Circuit breaker cooldown expired ({cooldown_elapsed:.1f}h >= "
+                        f"{CIRCUIT_BREAKER_COOLDOWN_HOURS}h). Allowing trading to resume."
+                    )
+                    # Reset consecutive loss streak — cooldown served
+                else:
+                    result['trading_allowed'] = False
+                    result['reason'] = (
+                        f"CIRCUIT BREAKER: {consecutive_losses} consecutive losses. "
+                        f"Cooldown: {CIRCUIT_BREAKER_COOLDOWN_HOURS - cooldown_elapsed:.1f}h remaining"
+                    )
+                    logger.error(result['reason'])
+                    return result
+            else:
+                result['trading_allowed'] = False
+                result['reason'] = f"CIRCUIT BREAKER: {consecutive_losses} consecutive losses (max {MAX_CONSECUTIVE_LOSSES})"
+                logger.error(result['reason'])
+                return result
 
         # CHECK 4: Win rate (only if 10+ trades)
         if len(recent_trades) >= 10 and win_rate < MIN_WIN_RATE_THRESHOLD:
