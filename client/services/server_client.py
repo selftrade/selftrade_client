@@ -29,7 +29,7 @@ class ServerClient:
             response = self.session.post(
                 f"{self.server_url}/login",
                 data={"username": username, "password": password},
-                timeout=10
+                timeout=30
             )
             response.raise_for_status()
             data = response.json()
@@ -51,7 +51,7 @@ class ServerClient:
             response = self.session.post(
                 f"{self.server_url}/register",
                 json={"email": email, "username": username, "password": password},
-                timeout=10
+                timeout=30
             )
             response.raise_for_status()
             data = response.json()
@@ -65,7 +65,7 @@ class ServerClient:
     def get_profile(self) -> Dict[str, Any]:
         """Get current user profile"""
         try:
-            response = self.session.get(f"{self.server_url}/profile", timeout=10)
+            response = self.session.get(f"{self.server_url}/profile", timeout=30)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
@@ -82,7 +82,7 @@ class ServerClient:
             response = self.session.get(
                 f"{self.server_url}/api/validate",
                 params={"api_key": key},
-                timeout=10
+                timeout=30
             )
             response.raise_for_status()
             return response.json()
@@ -131,7 +131,7 @@ class ServerClient:
             response = self.session.post(
                 f"{self.server_url}/api/use_signal",
                 params={"api_key": self.api_key},
-                timeout=10
+                timeout=30
             )
             response.raise_for_status()
             return response.json()
@@ -144,7 +144,7 @@ class ServerClient:
         try:
             response = self.session.get(
                 f"{self.server_url}/api/supported_pairs",
-                timeout=10
+                timeout=30
             )
             response.raise_for_status()
             return response.json()
@@ -158,7 +158,7 @@ class ServerClient:
             response = self.session.post(
                 f"{self.server_url}/create-payment",
                 json={"plan": plan},
-                timeout=10
+                timeout=30
             )
             response.raise_for_status()
             return response.json()

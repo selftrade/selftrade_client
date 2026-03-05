@@ -430,7 +430,45 @@ class ExchangeClient:
 
             logger.info(f"Placing market {side} order: {symbol} qty={rounded_amount} (exchange: {self.exchange_name})")
 
-            # Place order
+            price_precision = precision.get('price', 4)
+
+            # MEXC has thin orderbooks that cause 4-5% slippage on market orders.
+            # Always use capped limit orders on MEXC to prevent this.
+            if self.exchange_name == 'mexc':
+                try:
+                    ticker = self.exchange.fetch_ticker(symbol)
+                    is_buy = side.lower() in ['buy', 'long']
+
+                    if is_buy:
+                        # Cap at 0.5% above current ask — fills immediately without walking the book
+                        ask = float(ticker.get('ask') or ticker.get('last') or 0)
+                        if ask <= 0:
+                            raise ValueError("Could not get ask price")
+                        raw_price = ask * 1.005
+                    else:
+                        # Cap at 0.5% below current bid — fills immediately without walking the book
+                        bid = float(ticker.get('bid') or ticker.get('last') or 0)
+                        if bid <= 0:
+                            raise ValueError("Could not get bid price")
+                        raw_price = bid * 0.995
+
+                    limit_price = float(Decimal(str(raw_price)).quantize(
+                        Decimal(f"0.{'0' * price_precision}"), rounding=ROUND_DOWN
+                    ))
+
+                    if is_buy:
+                        order = self.exchange.create_limit_buy_order(symbol, rounded_amount, limit_price)
+                    else:
+                        order = self.exchange.create_limit_sell_order(symbol, rounded_amount, limit_price)
+
+                    logger.info(f"MEXC capped-limit {side} order placed: {symbol} {rounded_amount} @ {limit_price} (max 0.5% slip)")
+                    return order
+
+                except Exception as mexc_err:
+                    logger.warning(f"MEXC capped-limit order failed ({mexc_err}), falling back to market order")
+                    # Fall through to regular market order below
+
+            # Regular market order (Binance, Bybit, etc.)
             try:
                 if side.lower() == 'buy' or side.lower() == 'long':
                     order = self.exchange.create_market_buy_order(symbol, rounded_amount)
@@ -442,28 +480,23 @@ class ExchangeClient:
 
             except ccxt.ExchangeError as e:
                 error_str = str(e).lower()
-                # MEXC specific: If market order fails, try aggressive limit order
-                if self.exchange_name == 'mexc' and ('not support' in error_str or '10007' in error_str):
-                    logger.warning(f"MEXC market order failed, trying aggressive limit order for {symbol}")
+                # Fallback aggressive limit when market orders not supported
+                if 'not support' in error_str or '10007' in error_str:
+                    logger.warning(f"Market order not supported, trying aggressive limit for {symbol}")
                     try:
                         ticker = self.exchange.fetch_ticker(symbol)
-                        price_precision = precision.get('price', 2)
-
-                        if side.lower() == 'buy' or side.lower() == 'long':
-                            # Buy at slightly above ask price for immediate fill
-                            raw_price = float(ticker.get('ask', 0)) * 1.002  # 0.2% above ask
+                        if side.lower() in ['buy', 'long']:
+                            raw_price = float(ticker.get('ask', 0)) * 1.003
                             limit_price = float(Decimal(str(raw_price)).quantize(
                                 Decimal(f"0.{'0' * price_precision}"), rounding=ROUND_DOWN
                             ))
                             order = self.exchange.create_limit_buy_order(symbol, rounded_amount, limit_price)
                         else:
-                            # Sell at slightly below bid price for immediate fill
-                            raw_price = float(ticker.get('bid', 0)) * 0.998  # 0.2% below bid
+                            raw_price = float(ticker.get('bid', 0)) * 0.997
                             limit_price = float(Decimal(str(raw_price)).quantize(
                                 Decimal(f"0.{'0' * price_precision}"), rounding=ROUND_DOWN
                             ))
                             order = self.exchange.create_limit_sell_order(symbol, rounded_amount, limit_price)
-
                         logger.info(f"Aggressive limit {side} order placed: {symbol} {rounded_amount} @ {limit_price}")
                         return order
                     except Exception as limit_error:
