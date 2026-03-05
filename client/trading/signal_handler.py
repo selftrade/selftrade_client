@@ -132,7 +132,7 @@ class SignalHandler:
                     # Auto-correct TP for long - set to 2x SL distance or 3% above entry
                     sl_distance = entry_price - float(signal.get('stop_loss', entry_price * 0.985))
                     corrected_tp = entry_price + max(sl_distance * 2, entry_price * 0.03)
-                    logger.warning(f"Long signal has invalid TP ({take_profit}), auto-correcting to ${corrected_tp:.4f}")
+                    logger.warning(f"Long signal has invalid TP ({take_profit}), auto-correcting to {corrected_tp:.8g}")
                     signal['target_price'] = corrected_tp
                     signal['take_profit'] = corrected_tp
 
@@ -141,7 +141,7 @@ class SignalHandler:
                     # Auto-correct TP for short - set to 2x SL distance or 3% below entry
                     sl_distance = float(signal.get('stop_loss', entry_price * 1.015)) - entry_price
                     corrected_tp = entry_price - max(sl_distance * 2, entry_price * 0.03)
-                    logger.warning(f"Short signal has invalid TP ({take_profit}), auto-correcting to ${corrected_tp:.4f}")
+                    logger.warning(f"Short signal has invalid TP ({take_profit}), auto-correcting to {corrected_tp:.8g}")
                     signal['target_price'] = corrected_tp
                     signal['take_profit'] = corrected_tp
 
@@ -391,6 +391,18 @@ class SignalHandler:
             return " ".join(parts)
 
         # For trade signals, show full details
-        return (f"{pair} {side.upper()} | Entry: ${entry:.2f} | "
-                f"SL: ${stop:.2f} | TP: ${target:.2f} | "
+        # Use adaptive precision so tiny prices (PEPE, SHIB, BONK) don't show as $0.00
+        def _fmt(price: float) -> str:
+            if price <= 0:
+                return "0"
+            if price < 0.0001:
+                return f"{price:.8f}"
+            if price < 0.01:
+                return f"{price:.6f}"
+            if price < 1:
+                return f"{price:.4f}"
+            return f"{price:.2f}"
+
+        return (f"{pair} {side.upper()} | Entry: ${_fmt(entry)} | "
+                f"SL: ${_fmt(stop)} | TP: ${_fmt(target)} | "
                 f"Conf: {confidence:.0%} | Regime: {regime}")
