@@ -29,7 +29,8 @@ class PositionSizer:
         stop_loss: float,
         confidence: float = 1.0,
         min_trade_value: float = None,
-        regime: str = None
+        regime: str = None,
+        microstructure: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
         Calculate position size based on risk management.
@@ -41,6 +42,8 @@ class PositionSizer:
             confidence: Signal confidence (0-1)
             min_trade_value: Minimum trade value (uses MIN_TRADE_VALUE_USDT if not specified)
             regime: Market regime for adaptive sizing
+            microstructure: Parsed microstructure dict from SignalHandler._parse_microstructure()
+                            Contains conviction_boost (-0.30 to +0.30) that adjusts size
 
         Returns:
             Dict with quantity, usdt_value, risk_amount, etc.
@@ -95,8 +98,24 @@ class PositionSizer:
                     regime_multiplier = 0.7  # Was 0.6
                     logger.debug(f"Regime {regime}: Reducing risk by 30%")
 
-            # Calculate risk per trade based on confidence AND regime
-            effective_risk = self.risk_percent * max(confidence, 0.5) * regime_multiplier
+            # ===== MICROSTRUCTURE CONVICTION ADJUSTMENT =====
+            # Boost or reduce size based on funding rate, liquidation cascade,
+            # and spoof detection parsed from the server's signal reasons.
+            micro_multiplier = 1.0
+            if microstructure:
+                boost = microstructure.get('conviction_boost', 0.0)
+                if boost > 0:
+                    # Strong microstructure confirmation — size up (max +25%)
+                    micro_multiplier = 1.0 + min(boost, 0.25)
+                elif boost < 0:
+                    # Microstructure fights the signal — size down (max -20%)
+                    micro_multiplier = 1.0 + max(boost, -0.20)
+                if abs(boost) > 0.05:
+                    logger.info(f"Microstructure multiplier: {micro_multiplier:.2f}x "
+                                f"(boost={boost:+.2f}, summary={microstructure.get('summary', [])})")
+
+            # Calculate risk per trade based on confidence, regime, AND microstructure
+            effective_risk = self.risk_percent * max(confidence, 0.5) * regime_multiplier * micro_multiplier
             risk_amount = balance * (effective_risk / 100)
 
             # Calculate position size based on risk

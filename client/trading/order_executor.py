@@ -164,6 +164,7 @@ class OrderExecutor:
             take_profit = float(signal.get('target_price') or signal.get('take_profit', 0))
             confidence = float(signal.get('confidence', 0.5))
             regime = signal.get('regime', None)  # Extract regime for adaptive sizing
+            microstructure = signal.get('microstructure', None)  # Funding/liquidation/spoof conviction
 
             # Validate signal
             if side == 'hold' or side not in ['long', 'short', 'buy', 'sell']:
@@ -495,9 +496,9 @@ class OrderExecutor:
 
                 # CHECK: Use FUTURES for LONG if enabled (lower fees: 0.04% vs 0.1%)
                 if PREFER_FUTURES and self.exchange.futures_enabled and self.exchange.futures_connected:
-                    return self._execute_futures_long(pair, entry_price, stop_loss, take_profit, confidence, dry_run, regime)
+                    return self._execute_futures_long(pair, entry_price, stop_loss, take_profit, confidence, dry_run, regime, microstructure)
 
-                return self._execute_buy(pair, entry_price, stop_loss, take_profit, confidence, dry_run, regime)
+                return self._execute_buy(pair, entry_price, stop_loss, take_profit, confidence, dry_run, regime, microstructure)
 
             # Handle SHORT/SELL signals
             elif side in ['short', 'sell']:
@@ -541,7 +542,7 @@ class OrderExecutor:
                                     'reason': f'TP invalid after price movement (TP={take_profit:.4f}, entry={entry_price:.4f})'
                                 }
 
-                    return self._execute_futures_short(pair, entry_price, stop_loss, take_profit, confidence, dry_run, regime)
+                    return self._execute_futures_short(pair, entry_price, stop_loss, take_profit, confidence, dry_run, regime, microstructure)
 
                 # SPOT FALLBACK - Don't try to sell if we don't have the asset
                 asset_info = self.exchange.has_asset_balance(pair, min_value_usdt=MIN_TRADE_VALUE_USDT)
@@ -653,12 +654,13 @@ class OrderExecutor:
 
     def _execute_buy(self, pair: str, entry_price: float, stop_loss: float,
                      take_profit: float, confidence: float, dry_run: bool,
-                     regime: str = None) -> Dict[str, Any]:
+                     regime: str = None, microstructure: Dict = None) -> Dict[str, Any]:
         """Execute a BUY/LONG order using USDT balance"""
-        # Get USDT balance and calculate size (with regime-based adjustment)
+        # Get USDT balance and calculate size (with regime + microstructure conviction)
         balance = self.exchange.get_balance('USDT')
         size_result = self.sizer.calculate_position_size(
-            balance, entry_price, stop_loss, confidence, regime=regime
+            balance, entry_price, stop_loss, confidence, regime=regime,
+            microstructure=microstructure
         )
 
         if not size_result['valid']:
@@ -931,7 +933,7 @@ class OrderExecutor:
 
     def _execute_futures_long(self, pair: str, entry_price: float, stop_loss: float,
                                take_profit: float, confidence: float, dry_run: bool,
-                               regime: str = None) -> Dict[str, Any]:
+                               regime: str = None, microstructure: Dict = None) -> Dict[str, Any]:
         """
         Execute a LONG order on FUTURES market (1x leverage).
         Lower fees than spot (0.04% vs 0.1%).
@@ -959,11 +961,11 @@ class OrderExecutor:
 
         logger.info(f"Futures LONG: balance=${futures_balance:.2f} (min required: ${bybit_min_notional})")
 
-        # Calculate position size
+        # Calculate position size (with regime + microstructure conviction)
         size_result = self.sizer.calculate_position_size(
             futures_balance, entry_price, stop_loss, confidence,
             min_trade_value=max(MIN_FUTURES_TRADE_VALUE, bybit_min_notional),
-            regime=regime
+            regime=regime, microstructure=microstructure
         )
 
         if not size_result['valid']:
@@ -971,7 +973,7 @@ class OrderExecutor:
             spot_balance = self.exchange.get_balance('USDT')
             if spot_balance >= MIN_TRADE_VALUE_USDT:
                 logger.info(f"Futures sizing failed, falling back to spot")
-                return self._execute_buy(pair, entry_price, stop_loss, take_profit, confidence, dry_run, regime)
+                return self._execute_buy(pair, entry_price, stop_loss, take_profit, confidence, dry_run, regime, microstructure)
             return {
                 'success': False,
                 'reason': f"Futures sizing failed: {size_result.get('reason', 'Unknown')} (balance: ${futures_balance:.2f})",
@@ -1079,7 +1081,7 @@ class OrderExecutor:
 
     def _execute_futures_short(self, pair: str, entry_price: float, stop_loss: float,
                                 take_profit: float, confidence: float, dry_run: bool,
-                                regime: str = None) -> Dict[str, Any]:
+                                regime: str = None, microstructure: Dict = None) -> Dict[str, Any]:
         """
         Execute a SHORT order on FUTURES market (1x leverage).
         This allows shorting without owning the asset.
@@ -1120,11 +1122,11 @@ class OrderExecutor:
 
         logger.info(f"Futures balance: ${futures_balance:.2f} (min required: ${bybit_min_notional})")
 
-        # Calculate position size based on risk (use lower minimum for futures + regime-based sizing)
+        # Calculate position size based on risk (regime + microstructure conviction)
         size_result = self.sizer.calculate_position_size(
             futures_balance, entry_price, stop_loss, confidence,
             min_trade_value=max(MIN_FUTURES_TRADE_VALUE, bybit_min_notional),
-            regime=regime
+            regime=regime, microstructure=microstructure
         )
 
         if not size_result['valid']:

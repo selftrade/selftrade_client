@@ -150,9 +150,9 @@ class SignalHandler:
         if confidence < 0 or confidence > 1:
             return {'valid': False, 'reason': f"Invalid confidence: {confidence}"}
 
-        # Check minimum confidence - must match server threshold (60%)
-        if confidence < 0.55:
-            return {'valid': False, 'reason': f"Confidence too low: {confidence:.0%} (min 55%)"}
+        # Minimum confidence aligned with server's min_confidence (0.42)
+        if confidence < 0.42:
+            return {'valid': False, 'reason': f"Confidence too low: {confidence:.0%} (min 42%)"}
 
         # Signal is valid
         return {'valid': True, 'reason': None}
@@ -217,7 +217,10 @@ class SignalHandler:
         Process and normalize a signal for execution.
 
         Returns processed signal dict ready for OrderExecutor.
+        Includes microstructure_conviction parsed from the server's reasons list.
         """
+        reasons = signal.get('reasons', [])
+
         # Normalize values
         processed = {
             'pair': signal['pair'].upper().replace("/", ""),
@@ -229,7 +232,8 @@ class SignalHandler:
             'regime': signal.get('regime', 'UNKNOWN'),
             'timestamp': signal.get('timestamp', int(datetime.now(timezone.utc).timestamp())),
             'indicators': signal.get('indicators', {}),
-            'reasons': signal.get('reasons', [])
+            'reasons': reasons,
+            'microstructure': self._parse_microstructure(reasons, signal.get('side', 'hold')),
         }
 
         # Calculate default take profit if not provided
@@ -241,6 +245,102 @@ class SignalHandler:
                 processed['take_profit'] = processed['entry_price'] - (stop_distance * 2)
 
         return processed
+
+    def _parse_microstructure(self, reasons: list, side: str) -> Dict[str, Any]:
+        """
+        Parse microstructure signals from the server's reasons list.
+
+        Returns a dict with:
+            conviction_boost: float (-0.3 to +0.3) — size multiplier delta
+            summary: str — human-readable microstructure summary
+            funding_signal: str — 'bullish' | 'bearish' | 'neutral'
+            liquidation_signal: str — 'cascade_short' | 'squeeze_long' | 'neutral'
+            spoof_detected: bool
+        """
+        result = {
+            'conviction_boost': 0.0,
+            'summary': [],
+            'funding_signal': 'neutral',
+            'liquidation_signal': 'neutral',
+            'spoof_detected': False,
+        }
+
+        side_lower = side.lower()
+        is_long = side_lower in ['long', 'buy']
+
+        for reason in reasons:
+            r = str(reason).upper()
+
+            # ---- FUNDING RATE ----
+            if 'EXTREME_SHORT_FUNDING' in r or 'HIGH_SHORT_FUNDING' in r:
+                result['funding_signal'] = 'bullish'
+                if is_long:
+                    result['conviction_boost'] += 0.15   # funding confirms LONG
+                    result['summary'].append('funding: extreme shorts paying→LONG')
+                else:
+                    result['conviction_boost'] -= 0.10   # funding fights SHORT
+                    result['summary'].append('funding: shorts paying (fights SHORT)')
+
+            elif 'EXTREME_LONG_FUNDING' in r or 'HIGH_LONG_FUNDING' in r:
+                result['funding_signal'] = 'bearish'
+                if not is_long:
+                    result['conviction_boost'] += 0.15   # funding confirms SHORT
+                    result['summary'].append('funding: extreme longs paying→SHORT')
+                else:
+                    result['conviction_boost'] -= 0.10   # funding fights LONG
+                    result['summary'].append('funding: longs paying (fights LONG)')
+
+            elif 'FUNDING_CONFIRMS' in r:
+                result['conviction_boost'] += 0.08
+                result['summary'].append('funding: confirms direction')
+
+            # ---- LIQUIDATIONS ----
+            elif 'LONG_CASCADE' in r:
+                result['liquidation_signal'] = 'cascade_short'
+                if not is_long:
+                    result['conviction_boost'] += 0.12   # cascade aligns SHORT
+                    result['summary'].append('liquidations: long cascade→SHORT')
+                else:
+                    result['conviction_boost'] -= 0.08
+                    result['summary'].append('liquidations: long cascade (fights LONG)')
+
+            elif 'SHORT_SQUEEZE' in r:
+                result['liquidation_signal'] = 'squeeze_long'
+                if is_long:
+                    result['conviction_boost'] += 0.12   # squeeze aligns LONG
+                    result['summary'].append('liquidations: short squeeze→LONG')
+                else:
+                    result['conviction_boost'] -= 0.08
+                    result['summary'].append('liquidations: short squeeze (fights SHORT)')
+
+            # ---- SPOOF DETECTION ----
+            elif 'SPOOF_BID_GHOST' in r:
+                result['spoof_detected'] = True
+                if not is_long:
+                    result['conviction_boost'] += 0.10   # ghost bids → SHORT
+                    result['summary'].append('spoof: ghost bids detected→SHORT')
+                else:
+                    result['conviction_boost'] -= 0.08
+                    result['summary'].append('spoof: ghost bids (fights LONG)')
+
+            elif 'SPOOF_ASK_GHOST' in r:
+                result['spoof_detected'] = True
+                if is_long:
+                    result['conviction_boost'] += 0.10   # ghost asks → LONG
+                    result['summary'].append('spoof: ghost asks detected→LONG')
+                else:
+                    result['conviction_boost'] -= 0.08
+                    result['summary'].append('spoof: ghost asks (fights SHORT)')
+
+        # Cap conviction boost
+        result['conviction_boost'] = max(-0.30, min(0.30, result['conviction_boost']))
+
+        if result['conviction_boost'] > 0.05:
+            logger.info(f"Microstructure BOOST +{result['conviction_boost']:.2f}: {result['summary']}")
+        elif result['conviction_boost'] < -0.05:
+            logger.info(f"Microstructure REDUCE {result['conviction_boost']:.2f}: {result['summary']}")
+
+        return result
 
     def filter_by_regime(self, signal: Dict, allowed_regimes: list = None) -> bool:
         """Filter signal by market regime"""
