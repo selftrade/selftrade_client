@@ -2435,6 +2435,8 @@ class MainWindow(QMainWindow):
             elif result.get('skipped'):
                 # Smart delay decided to skip - log but not as error
                 self._log(f"⏭️ Trade skipped: {result.get('reason')}")
+            elif result.get('position_limit'):
+                pass  # Silent skip — position limit hit, no need to spam the log
             elif result.get('reason'):
                 # Only log errors that have a reason (not silent skips)
                 self._log(f"❌ Execution failed: {result.get('reason')}")

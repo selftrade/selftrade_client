@@ -319,8 +319,15 @@ class OrderExecutor:
 
             # CRITICAL: Validate signal entry price matches actual exchange price
             # Prevents executing trades when signal is from wrong exchange
-            # STRICT 1.5% limit after 9% loss incidents
-            PRICE_MISMATCH_THRESHOLD = 1.5  # Maximum allowed difference in %
+            # Tiered threshold: sub-cent coins have wider spreads
+            if entry_price < 0.001:
+                PRICE_MISMATCH_THRESHOLD = 6.0   # BONK/PEPE/SHIB/FLOKI — spread is 3-5%
+            elif entry_price < 0.01:
+                PRICE_MISMATCH_THRESHOLD = 4.0   # Other micro-price coins
+            elif entry_price < 1.0:
+                PRICE_MISMATCH_THRESHOLD = 3.0   # Small coins <$1
+            else:
+                PRICE_MISMATCH_THRESHOLD = 1.5   # Normal coins — keep strict
 
             try:
                 actual_price = self.exchange.get_current_price(pair)
