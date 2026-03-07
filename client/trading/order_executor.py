@@ -384,7 +384,7 @@ class OrderExecutor:
 
                             try:
                                 # Verify actual exchange balance matches expected quantity
-                                actual_balance = self.exchange_client.get_asset_balance(base_asset)
+                                actual_balance = self.exchange.get_balance(base_asset)
                                 balance_diff_pct = abs(actual_balance - expected_qty) / expected_qty * 100 if expected_qty > 0 else 0
 
                                 if balance_diff_pct > 5.0:  # More than 5% difference
