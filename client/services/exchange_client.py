@@ -101,6 +101,18 @@ class ExchangeClient:
                 logger.info(f"{currency} balance: free={free}, used={used}, total={total}")
 
             return free
+
+    def get_total_balance(self, currency: str) -> float:
+        """Get total balance (free + used/locked in orders) for position verification."""
+        if not self.connected:
+            raise RuntimeError("Not connected to exchange")
+        try:
+            self.balance = self.exchange.fetch_balance()
+            currency_balance = self.balance.get(currency, {})
+            return float(currency_balance.get('total', 0) or 0)
+        except Exception as e:
+            logger.error(f"Failed to fetch total balance for {currency}: {e}")
+            raise
         except Exception as e:
             logger.error(f"Failed to fetch balance: {e}")
             raise
