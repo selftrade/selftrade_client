@@ -24,7 +24,7 @@ MIN_CONFIDENCE = 0.42  # Minimum confidence to execute trade (matches server's m
 
 # ===================== POSITION LIMITS (SMALL ACCOUNT OPTIMIZATION) =====================
 # For accounts <$200, limit positions to reduce fee drag
-MAX_CONCURRENT_POSITIONS = 5  # Max 5 positions at a time
+MAX_CONCURRENT_POSITIONS = 10  # Max 10 positions at a time
 PREFER_FUTURES = True  # Prefer futures over spot (0.04% vs 0.1% fees)
 MIN_CONFIDENCE_FOR_SPOT = 0.48  # Only open spot if confidence >48% (was 60% - blocked too many valid signals)
 
