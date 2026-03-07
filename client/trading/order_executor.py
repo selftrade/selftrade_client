@@ -387,7 +387,17 @@ class OrderExecutor:
                                 actual_balance = self.exchange.get_balance(base_asset)
                                 balance_diff_pct = abs(actual_balance - expected_qty) / expected_qty * 100 if expected_qty > 0 else 0
 
-                                if balance_diff_pct > 5.0:  # More than 5% difference
+                                if balance_diff_pct > 90.0:
+                                    # Position is essentially gone (SL/TP already sold it, only dust remains).
+                                    # Clean up the stale position and open this signal as a fresh trade.
+                                    logger.warning(
+                                        f"STALE POSITION cleaned: {pair} expected {expected_qty:.6f} but only "
+                                        f"{actual_balance:.6f} remains ({balance_diff_pct:.1f}% diff). "
+                                        f"Position was already closed — removing and retrying as fresh trade."
+                                    )
+                                    self.manager.remove_position(pair)
+                                    return self.execute_signal(signal, dry_run=dry_run)
+                                elif balance_diff_pct > 5.0:  # More than 5% difference
                                     logger.error(
                                         f"FLIP ABORTED: {pair} balance mismatch. "
                                         f"Expected: {expected_qty:.6f}, Actual: {actual_balance:.6f} "
