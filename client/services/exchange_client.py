@@ -102,6 +102,10 @@ class ExchangeClient:
 
             return free
 
+        except Exception as e:
+            logger.error(f"Failed to fetch balance: {e}")
+            raise
+
     def get_total_balance(self, currency: str) -> float:
         """Get total balance (free + used/locked in orders) for position verification."""
         if not self.connected:
@@ -112,9 +116,6 @@ class ExchangeClient:
             return float(currency_balance.get('total', 0) or 0)
         except Exception as e:
             logger.error(f"Failed to fetch total balance for {currency}: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Failed to fetch balance: {e}")
             raise
 
     def get_all_balances(self, min_value_usdt: float = 1.0) -> Dict[str, Dict[str, float]]:
