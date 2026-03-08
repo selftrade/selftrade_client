@@ -15,13 +15,14 @@ Usage:
 Output:
     dist/SelfTrade-Setup.exe
 
-After building, upload to:
-1. GitHub Releases: gh release create v1.0.0 dist/SelfTrade-Setup.exe --repo selftrade/selftrade_client
-2. Self-hosted: cp dist/SelfTrade-Setup.exe /opt/final_trading_with_client/static/downloads/
+After building, push a tag to trigger GitHub Actions release:
+    git tag v1.0.1 && git push origin v1.0.1
 """
 
 import subprocess
 import sys
+import re
+import os
 import shutil
 from pathlib import Path
 
@@ -32,6 +33,21 @@ ENTRY_POINT = "client/main.py"
 
 # Server static downloads path for self-hosted copy
 SERVER_DOWNLOADS = Path("/opt/final_trading_with_client/static/downloads")
+
+
+def get_version() -> str:
+    """Read version from client/config.py"""
+    # Allow env override (used by CI)
+    env_ver = os.environ.get("BUILD_VERSION")
+    if env_ver:
+        return env_ver
+
+    config_path = ROOT_DIR / "client" / "config.py"
+    if config_path.exists():
+        match = re.search(r'VERSION\s*=\s*["\']([^"\']+)["\']', config_path.read_text())
+        if match:
+            return match.group(1)
+    return "1.0.0"
 
 
 def check_nuitka():
@@ -51,10 +67,11 @@ def check_nuitka():
 
 def build():
     check_nuitka()
+    version = get_version()
 
     DIST_DIR.mkdir(exist_ok=True)
 
-    print(f"\nBuilding {APP_NAME}.exe with Nuitka (native C compilation)...")
+    print(f"\nBuilding {APP_NAME}.exe v{version} with Nuitka (native C compilation)...")
     print("This will take several minutes on the first build.\n")
 
     cmd = [
@@ -72,7 +89,7 @@ def build():
         # Company/product info embedded in .exe properties
         "--company-name=SelfTrade",
         "--product-name=SelfTrade Client",
-        "--product-version=1.0.0",
+        f"--product-version={version}",
         "--file-description=SelfTrade Desktop Trading Client",
         "--copyright=SelfTrade 2024-2026",
 
@@ -90,6 +107,8 @@ def build():
         "--include-package=websockets",
         "--include-package=aiohttp",
         "--include-package=requests",
+        "--include-package=qasync",
+        "--include-package=ujson",
 
         # Follow imports within our code
         "--follow-imports",
@@ -101,6 +120,7 @@ def build():
         "--nofollow-import-to=setuptools",
         "--nofollow-import-to=pip",
         "--nofollow-import-to=distutils",
+        "--nofollow-import-to=ccxt.pro",  # Exclude ccxt pro (async websocket exchanges, not used)
 
         # Entry point
         ENTRY_POINT,
@@ -121,8 +141,9 @@ def build():
             shutil.copy2(exe_path, dest)
             print(f"Copied to server: {dest}")
 
-        print(f"\nTo upload to GitHub Releases:")
-        print(f"  gh release create v1.0.0 {exe_path} --repo selftrade/selftrade_client --title 'SelfTrade Client v1.0.0' --notes 'Desktop trading client'")
+        print(f"\nTo release on GitHub:")
+        print(f"  git tag v{version} && git push origin v{version}")
+        print(f"  (GitHub Actions will build & publish automatically)")
     else:
         print("\nBuild failed - .exe not found in dist/")
         print("Check the Nuitka output above for errors.")

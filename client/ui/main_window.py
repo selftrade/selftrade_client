@@ -1248,6 +1248,9 @@ class MainWindow(QMainWindow):
         # Settings grid
         grid = QGridLayout()
         grid.setSpacing(8)
+        grid.setColumnStretch(0, 0)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnMinimumWidth(1, 160)
 
         # Trading pair
         pair_label = QLabel("Pair")
@@ -1256,6 +1259,7 @@ class MainWindow(QMainWindow):
 
         self.pair_combo = QComboBox()
         self.pair_combo.setMinimumHeight(36)
+        self.pair_combo.setMinimumWidth(140)
         for pair in SUPPORTED_PAIRS:
             self.pair_combo.addItem(f"  {pair}")
         grid.addWidget(self.pair_combo, 0, 1)
