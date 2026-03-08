@@ -2436,11 +2436,15 @@ class MainWindow(QMainWindow):
                 # Smart delay decided to skip - log but not as error
                 self._log(f"⏭️ Trade skipped: {result.get('reason')}")
             elif result.get('position_limit'):
-                pass  # Silent skip — position limit hit, no need to spam the log
+                self._log(f"⚠️ Position limit reached — close existing positions first")
+            elif result.get('invalid_sl'):
+                self._log(f"⚠️ Invalid SL: {result.get('reason')}")
+            elif result.get('unsupported_pair'):
+                self._log(f"❌ {result.get('reason')}")
             elif result.get('reason'):
-                # Only log errors that have a reason (not silent skips)
                 self._log(f"❌ Execution failed: {result.get('reason')}")
-            # else: silent skip - don't log anything
+            else:
+                self._log(f"⚠️ Trade not executed (no details)")
         finally:
             self.execute_btn.setEnabled(True)
             self.execute_btn.setText("⚡ Execute Trade")

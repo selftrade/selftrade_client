@@ -246,8 +246,18 @@ class OrderExecutor:
 
             # CHECK: Position limit - don't open too many positions (fee drag on small accounts)
             current_positions = len(self.manager.get_all_positions())
-            balance = self.exchange.get_balance() if hasattr(self.exchange, 'get_balance') else 500
-            max_positions = get_max_positions(balance)
+            # Use total portfolio value (free + in positions) for max positions calc
+            try:
+                free_balance = self.exchange.get_balance('USDT')
+                # Estimate total: free USDT + value of all positions
+                position_value = sum(
+                    p.get('entry_price', 0) * p.get('quantity', 0)
+                    for p in self.manager.get_all_positions().values()
+                )
+                total_portfolio = free_balance + position_value
+            except Exception:
+                total_portfolio = 500
+            max_positions = get_max_positions(total_portfolio)
             if current_positions >= max_positions:
                 # Check if this is an existing position (update allowed)
                 if not self.manager.get_position(pair):
