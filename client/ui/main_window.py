@@ -633,7 +633,7 @@ class MainWindow(QMainWindow):
 
         # EMERGENCY STOP: Consecutive loss protection
         self._consecutive_losses = 0
-        self._max_consecutive_losses = 3  # Stop trading after 3 consecutive losses
+        self._max_consecutive_losses = 5  # Stop trading after N consecutive losses (configurable in UI)
         self._trading_halted = False
         self._halt_reason = ""
 
@@ -678,11 +678,7 @@ class MainWindow(QMainWindow):
         header.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         main_layout.addWidget(header)
 
-        # Warning banner (collapsible, fixed height when visible)
-        self.warning_banner = self._create_warning_banner()
-        self.warning_banner.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.warning_banner.setMaximumHeight(80)
-        main_layout.addWidget(self.warning_banner)
+        # Warning banner removed — IP whitelist info moved to testnet checkbox area
 
         # Tab widget (expands to fill space)
         tabs = QTabWidget()
@@ -727,7 +723,81 @@ class MainWindow(QMainWindow):
         brand_layout.addWidget(subtitle)
 
         layout.addLayout(brand_layout)
+
+        # Exchange status (compact, always visible)
+        self.exchange_status = QLabel("●  Not Connected")
+        self.exchange_status.setStyleSheet("font-size: 12px; color: #ff6b6b; font-weight: 600; padding: 0 12px;")
+        layout.addWidget(self.exchange_status)
+
+        # Balance display (hidden until connected)
+        self.balance_frame = QFrame()
+        self.balance_frame.setVisible(False)
+        self.balance_frame.setStyleSheet("background: transparent; border: none;")
+        bal_lay = QHBoxLayout(self.balance_frame)
+        bal_lay.setContentsMargins(0, 0, 0, 0)
+        bal_lay.setSpacing(4)
+        bal_icon = QLabel("💰")
+        bal_icon.setStyleSheet("font-size: 13px;")
+        bal_lay.addWidget(bal_icon)
+        self.balance_label = QLabel("$0.00")
+        self.balance_label.setStyleSheet("font-size: 14px; font-weight: 700; color: #00d4aa;")
+        bal_lay.addWidget(self.balance_label)
+        layout.addWidget(self.balance_frame)
+
         layout.addStretch()
+
+        # ===== LIVE STATS BAR (always visible in header) =====
+        stats_bar = QHBoxLayout()
+        stats_bar.setSpacing(16)
+
+        def _make_stat(label_text, default_val):
+            container = QVBoxLayout()
+            container.setSpacing(0)
+            container.setContentsMargins(0, 0, 0, 0)
+            lbl = QLabel(label_text)
+            lbl.setStyleSheet("font-size: 9px; font-weight: 600; color: #606080; letter-spacing: 1px;")
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            container.addWidget(lbl)
+            val = QLabel(default_val)
+            val.setStyleSheet("font-size: 16px; font-weight: 800; color: #ffffff;")
+            val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            container.addWidget(val)
+            return container, val
+
+        pnl_c, self.total_pnl_value = _make_stat("P&L", "$0.00")
+        stats_bar.addLayout(pnl_c)
+
+        # Thin separator
+        sep1 = QFrame()
+        sep1.setFixedWidth(1)
+        sep1.setFixedHeight(30)
+        sep1.setStyleSheet("background: rgba(100,110,140,0.3);")
+        stats_bar.addWidget(sep1)
+
+        wr_c, self.win_rate_value = _make_stat("WIN", "--")
+        stats_bar.addLayout(wr_c)
+
+        sep2 = QFrame()
+        sep2.setFixedWidth(1)
+        sep2.setFixedHeight(30)
+        sep2.setStyleSheet("background: rgba(100,110,140,0.3);")
+        stats_bar.addWidget(sep2)
+
+        tr_c, self.trades_today_value = _make_stat("TODAY", "0")
+        stats_bar.addLayout(tr_c)
+
+        sep3 = QFrame()
+        sep3.setFixedWidth(1)
+        sep3.setFixedHeight(30)
+        sep3.setStyleSheet("background: rgba(100,110,140,0.3);")
+        stats_bar.addWidget(sep3)
+
+        ac_c, self.active_positions_value = _make_stat("OPEN", "0")
+        stats_bar.addLayout(ac_c)
+
+        layout.addLayout(stats_bar)
+
+        layout.addSpacing(12)
 
         # User info card (hidden until logged in)
         self.user_card = QFrame()
@@ -780,45 +850,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.user_card)
 
         return header
-
-    def _create_warning_banner(self) -> QWidget:
-        """Create compact IP whitelist warning banner"""
-        banner = QFrame()
-        banner.setObjectName("warningCard")
-        banner.setFixedHeight(36)
-        layout = QHBoxLayout(banner)
-        layout.setContentsMargins(10, 4, 10, 4)
-        layout.setSpacing(8)
-
-        msg = QLabel("⚠️  Whitelist your IP in exchange API settings to avoid auth errors")
-        msg.setStyleSheet("font-size: 11px; font-weight: 600; color: #ffb400;")
-        layout.addWidget(msg, 1)
-
-        close_btn = QPushButton("✕")
-        close_btn.setFixedSize(22, 22)
-        close_btn.setStyleSheet("""
-            QPushButton {
-                background: rgba(255, 180, 0, 0.25);
-                border: none; border-radius: 11px;
-                color: #ffb400; font-size: 12px; font-weight: bold;
-            }
-            QPushButton:hover { background: rgba(255, 180, 0, 0.45); }
-        """)
-        close_btn.clicked.connect(self._hide_warning_banner)
-        layout.addWidget(close_btn)
-
-        return banner
-
-    def _hide_warning_banner(self):
-        """Hide warning banner with smooth animation"""
-        # Create animation for smooth collapse
-        self._banner_animation = QPropertyAnimation(self.warning_banner, b"maximumHeight")
-        self._banner_animation.setDuration(200)
-        self._banner_animation.setStartValue(self.warning_banner.height())
-        self._banner_animation.setEndValue(0)
-        self._banner_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._banner_animation.finished.connect(lambda: self.warning_banner.setVisible(False))
-        self._banner_animation.start()
 
     def _create_connection_tab(self) -> QWidget:
         """Create the connection settings tab with scroll support"""
@@ -1096,10 +1127,17 @@ class MainWindow(QMainWindow):
 
         exchange_layout.addWidget(api_box)
 
-        # Testnet checkbox
-        self.testnet_check = QCheckBox("  🧪 Use Testnet / Sandbox Mode")
+        # Testnet checkbox + IP whitelist hint
+        testnet_row = QHBoxLayout()
+        testnet_row.setSpacing(8)
+        self.testnet_check = QCheckBox("  🧪 Testnet")
         self.testnet_check.setStyleSheet("font-size: 13px; padding: 8px 0;")
-        exchange_layout.addWidget(self.testnet_check)
+        testnet_row.addWidget(self.testnet_check)
+        ip_hint = QLabel("⚠️ Whitelist your IP in exchange API settings")
+        ip_hint.setStyleSheet("font-size: 10px; color: rgba(255,180,0,0.5); padding: 0;")
+        testnet_row.addWidget(ip_hint)
+        testnet_row.addStretch()
+        exchange_layout.addLayout(testnet_row)
 
         # Connect button
         self.connect_exchange_btn = QPushButton("🔌  Connect to Exchange")
@@ -1119,27 +1157,10 @@ class MainWindow(QMainWindow):
         self.connect_exchange_btn.clicked.connect(self._on_connect_exchange)
         exchange_layout.addWidget(self.connect_exchange_btn)
 
-        # Status
-        self.exchange_status = QLabel("○  Not Connected")
-        self.exchange_status.setStyleSheet("font-size: 13px; color: #ff6b6b; padding: 8px 0;")
-        exchange_layout.addWidget(self.exchange_status)
-
-        # Balance frame (hidden initially)
-        self.balance_frame = QFrame()
-        self.balance_frame.setStyleSheet("""
-            QFrame {
-                background-color: rgba(0, 212, 170, 0.15);
-                border: 1px solid #00d4aa;
-                border-radius: 8px;
-                padding: 15px;
-            }
-        """)
-        self.balance_frame.setVisible(False)
-        balance_layout = QVBoxLayout(self.balance_frame)
-        self.balance_label = QLabel("$0.00 USDT")
-        self.balance_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #00d4aa;")
-        balance_layout.addWidget(self.balance_label)
-        exchange_layout.addWidget(self.balance_frame)
+        # Connection status (local to connection tab - header has the main one)
+        self.conn_tab_status = QLabel("○  Not Connected")
+        self.conn_tab_status.setStyleSheet("font-size: 13px; color: #ff6b6b; padding: 8px 0;")
+        exchange_layout.addWidget(self.conn_tab_status)
 
         # Portfolio section
         portfolio_label = QLabel("💼  Your Portfolio:")
@@ -1205,82 +1226,9 @@ class MainWindow(QMainWindow):
         main_layout = QHBoxLayout()
         main_layout.setSpacing(16)
 
-        # ========== LEFT COLUMN - Stats + Settings + Signal ==========
+        # ========== LEFT COLUMN - Settings + Signal ==========
         left_col = QVBoxLayout()
         left_col.setSpacing(12)
-
-        # ========== COMPACT STATS DASHBOARD (2x2 grid) ==========
-        stats_frame = QFrame()
-        stats_frame.setObjectName("card")
-        stats_grid = QGridLayout(stats_frame)
-        stats_grid.setSpacing(8)
-        stats_grid.setContentsMargins(12, 10, 12, 10)
-
-        # P&L
-        pnl_mini = QFrame()
-        pnl_mini.setObjectName("statsCard")
-        pnl_mini.setMaximumHeight(65)
-        pnl_l = QVBoxLayout(pnl_mini)
-        pnl_l.setContentsMargins(10, 6, 10, 6)
-        pnl_l.setSpacing(2)
-        pnl_label = QLabel("P&L")
-        pnl_label.setObjectName("statLabel")
-        pnl_l.addWidget(pnl_label)
-        self.total_pnl_value = QLabel("$0.00")
-        self.total_pnl_value.setObjectName("statValue")
-        self.total_pnl_value.setStyleSheet("font-size: 20px; font-weight: 800;")
-        pnl_l.addWidget(self.total_pnl_value)
-        stats_grid.addWidget(pnl_mini, 0, 0)
-
-        # Win Rate
-        wr_mini = QFrame()
-        wr_mini.setObjectName("statsCard")
-        wr_mini.setMaximumHeight(65)
-        wr_l = QVBoxLayout(wr_mini)
-        wr_l.setContentsMargins(10, 6, 10, 6)
-        wr_l.setSpacing(2)
-        wr_label = QLabel("WIN RATE")
-        wr_label.setObjectName("statLabel")
-        wr_l.addWidget(wr_label)
-        self.win_rate_value = QLabel("--")
-        self.win_rate_value.setObjectName("statValue")
-        self.win_rate_value.setStyleSheet("font-size: 20px; font-weight: 800;")
-        wr_l.addWidget(self.win_rate_value)
-        stats_grid.addWidget(wr_mini, 0, 1)
-
-        # Trades Today
-        trades_mini = QFrame()
-        trades_mini.setObjectName("statsCard")
-        trades_mini.setMaximumHeight(65)
-        tr_l = QVBoxLayout(trades_mini)
-        tr_l.setContentsMargins(10, 6, 10, 6)
-        tr_l.setSpacing(2)
-        trades_label = QLabel("TODAY")
-        trades_label.setObjectName("statLabel")
-        tr_l.addWidget(trades_label)
-        self.trades_today_value = QLabel("0")
-        self.trades_today_value.setObjectName("statValue")
-        self.trades_today_value.setStyleSheet("font-size: 20px; font-weight: 800;")
-        tr_l.addWidget(self.trades_today_value)
-        stats_grid.addWidget(trades_mini, 1, 0)
-
-        # Active Positions
-        active_mini = QFrame()
-        active_mini.setObjectName("statsCard")
-        active_mini.setMaximumHeight(65)
-        ac_l = QVBoxLayout(active_mini)
-        ac_l.setContentsMargins(10, 6, 10, 6)
-        ac_l.setSpacing(2)
-        active_label = QLabel("ACTIVE")
-        active_label.setObjectName("statLabel")
-        ac_l.addWidget(active_label)
-        self.active_positions_value = QLabel("0")
-        self.active_positions_value.setObjectName("statValue")
-        self.active_positions_value.setStyleSheet("font-size: 20px; font-weight: 800;")
-        ac_l.addWidget(self.active_positions_value)
-        stats_grid.addWidget(active_mini, 1, 1)
-
-        left_col.addWidget(stats_frame)
 
         # Trading Settings Card
         settings_card = QFrame()
@@ -1352,6 +1300,41 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.max_positions_spin, 3, 1)
 
         settings_layout.addLayout(grid)
+
+        # Max consecutive losses (circuit breaker)
+        cb_label = QLabel("Max Losses")
+        cb_label.setObjectName("fieldLabel")
+        cb_label.setToolTip("Circuit breaker: pause trading after N consecutive stop losses")
+        grid.addWidget(cb_label, 4, 0)
+
+        cb_row = QHBoxLayout()
+        cb_row.setSpacing(6)
+        self.max_losses_spin = QSpinBox()
+        self.max_losses_spin.setRange(2, 20)
+        self.max_losses_spin.setValue(5)
+        self.max_losses_spin.setMinimumHeight(36)
+        self.max_losses_spin.setToolTip("Pause auto-trade after this many consecutive stop losses")
+        self.max_losses_spin.valueChanged.connect(self._on_max_losses_changed)
+        cb_row.addWidget(self.max_losses_spin)
+
+        self.reset_cb_btn = QPushButton("Reset")
+        self.reset_cb_btn.setFixedHeight(36)
+        self.reset_cb_btn.setFixedWidth(60)
+        self.reset_cb_btn.setToolTip("Reset circuit breaker and resume trading")
+        self.reset_cb_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 107, 107, 0.2);
+                border: 1px solid rgba(255, 107, 107, 0.4);
+                border-radius: 6px;
+                color: #ff6b6b;
+                font-size: 11px;
+                font-weight: 600;
+            }
+            QPushButton:hover { background: rgba(255, 107, 107, 0.35); }
+        """)
+        self.reset_cb_btn.clicked.connect(self._on_reset_circuit_breaker)
+        cb_row.addWidget(self.reset_cb_btn)
+        grid.addLayout(cb_row, 4, 1)
 
         # Toggles row (auto-trade + futures side by side)
         toggles_row = QHBoxLayout()
@@ -2008,10 +1991,14 @@ class MainWindow(QMainWindow):
                     final_count = self.position_manager.get_position_count()
                     self._log(f"📊 Position manager now has {final_count} position(s)")
 
-                self.exchange_status.setText(f"●  Connected to {exchange.upper()}")
-                self.exchange_status.setStyleSheet("font-size: 13px; color: #00d4aa; font-weight: 600; padding: 8px 0;")
+                self.exchange_status.setText(f"●  {exchange.upper()}")
+                self.exchange_status.setStyleSheet("font-size: 12px; color: #00d4aa; font-weight: 600; padding: 0 12px;")
                 self.balance_frame.setVisible(True)
                 self.balance_label.setText(f"${self._total_balance:,.2f}")
+                # Update connection tab status too
+                if hasattr(self, 'conn_tab_status'):
+                    self.conn_tab_status.setText(f"●  Connected to {exchange.upper()}")
+                    self.conn_tab_status.setStyleSheet("font-size: 13px; color: #00d4aa; padding: 8px 0;")
 
                 self._log(f"✅ Connected to {exchange.upper()}: ${self._total_balance:,.2f} total portfolio")
                 self._update_status()
@@ -2088,6 +2075,25 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'exchange_client') and self.exchange_client:
             self.exchange_client.max_positions_override = value
         self._log(f"Max positions set to {value} (last 2 reserved for 80%+ confidence)")
+
+    def _on_max_losses_changed(self, value):
+        """Handle circuit breaker max losses change"""
+        self._max_consecutive_losses = value
+        self._log(f"Circuit breaker: will pause after {value} consecutive losses")
+
+    def _on_reset_circuit_breaker(self):
+        """Reset circuit breaker — resume trading and clear loss counter"""
+        self._consecutive_losses = 0
+        self._trading_halted = False
+        self._halt_reason = ""
+        # Also reset in position manager if available
+        if hasattr(self, 'position_manager') and self.position_manager:
+            try:
+                self.position_manager._consecutive_losses = 0
+                self.position_manager._circuit_breaker_until = None
+            except Exception:
+                pass
+        self._log("Circuit breaker reset — trading resumed, loss counter cleared")
 
     def _refresh_portfolio(self):
         """Refresh portfolio display - uses background thread"""
@@ -2838,6 +2844,7 @@ class MainWindow(QMainWindow):
                     'risk_percent': self.risk_spin.value(),
                     'min_confidence': self.confidence_spin.value(),
                     'max_positions': self.max_positions_spin.value(),
+                    'max_consecutive_losses': self.max_losses_spin.value(),
                     'auto_trade': self.auto_trade_check.isChecked(),
                     'futures_enabled': self.futures_check.isChecked()
                 }
@@ -2890,6 +2897,9 @@ class MainWindow(QMainWindow):
                 self.confidence_spin.setValue(trading['min_confidence'])
             if trading.get('max_positions') is not None:
                 self.max_positions_spin.setValue(trading['max_positions'])
+            if trading.get('max_consecutive_losses') is not None:
+                self.max_losses_spin.setValue(trading['max_consecutive_losses'])
+                self._max_consecutive_losses = trading['max_consecutive_losses']
             if trading.get('auto_trade'):
                 self.auto_trade_check.setChecked(True)
             if trading.get('futures_enabled'):
@@ -2983,14 +2993,13 @@ class MainWindow(QMainWindow):
                 for pos in positions.values():
                     total_pnl += pos.get('unrealized_pnl_net', 0)
 
-            # Update P&L display with color
+            # Update P&L display with color (inline styles since stats are in header)
             if total_pnl >= 0:
                 self.total_pnl_value.setText(f"+${total_pnl:,.2f}")
-                self.total_pnl_value.setObjectName("statValueProfit")
+                self.total_pnl_value.setStyleSheet("font-size: 16px; font-weight: 800; color: #00d4aa;")
             else:
                 self.total_pnl_value.setText(f"-${abs(total_pnl):,.2f}")
-                self.total_pnl_value.setObjectName("statValueLoss")
-            self.total_pnl_value.setStyleSheet("")  # Force style refresh
+                self.total_pnl_value.setStyleSheet("font-size: 16px; font-weight: 800; color: #ff6b6b;")
 
             # Get trade history for win rate
             trade_history = self.position_manager.trade_history
@@ -3002,13 +3011,12 @@ class MainWindow(QMainWindow):
 
                 # Color code win rate
                 if win_rate >= 50:
-                    self.win_rate_value.setObjectName("statValueProfit")
+                    self.win_rate_value.setStyleSheet("font-size: 16px; font-weight: 800; color: #00d4aa;")
                 else:
-                    self.win_rate_value.setObjectName("statValueLoss")
-                self.win_rate_value.setStyleSheet("")  # Force style refresh
+                    self.win_rate_value.setStyleSheet("font-size: 16px; font-weight: 800; color: #ff6b6b;")
             else:
                 self.win_rate_value.setText("--")
-                self.win_rate_value.setObjectName("statValue")
+                self.win_rate_value.setStyleSheet("font-size: 16px; font-weight: 800; color: #ffffff;")
 
             # Count trades today (check exit_time first, then entry_time, then timestamp)
             from datetime import datetime, timedelta
