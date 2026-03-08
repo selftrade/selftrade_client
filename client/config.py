@@ -8,7 +8,7 @@ VERSION_NAME = "SelfTrade Client"
 
 # ===================== SERVER =====================
 SERVER_URL = os.getenv("SELFTRADE_SERVER_URL", "https://www.selftrade.site")
-WS_URL = os.getenv("SELFTRADE_WS_URL", "wss://www.selftrade.site/ws/live")
+WS_URL = os.getenv("SELFTRADE_WS_URL", "wss://www.selftrade.site/ws/signals")
 
 # ===================== SUPPORTED EXCHANGES =====================
 SUPPORTED_EXCHANGES = ["binance", "mexc", "bybit"]
