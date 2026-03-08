@@ -267,6 +267,16 @@ class OrderExecutor:
                         'order': None,
                         'position_limit': True
                     }
+            # Reserve last 2 slots for high-confidence (80%+) signals only
+            elif current_positions >= max_positions - 2:
+                if not self.manager.get_position(pair) and confidence < 0.80:
+                    logger.info(f"Reserved slot: {current_positions}/{max_positions} positions, need 80%+ confidence (got {confidence:.0%})")
+                    return {
+                        'success': False,
+                        'reason': f"Reserved slots ({current_positions}/{max_positions}) — need 80%+ confidence (got {confidence:.0%})",
+                        'order': None,
+                        'position_limit': True
+                    }
 
             # CHECK: For SPOT trades, require higher confidence (spot has higher fees)
             if side in ['long', 'buy'] and confidence < MIN_CONFIDENCE_FOR_SPOT:

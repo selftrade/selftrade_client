@@ -31,19 +31,20 @@ MIN_CONFIDENCE_FOR_SPOT = 0.48
 
 def get_max_positions(balance: float) -> int:
     """Dynamic max positions based on account balance.
-    Under $100: 2 positions max (each needs $30+ to overcome fees)
-    $100-$500: 3 positions
-    $500-$2000: 4 positions
-    $2000+: 6 positions
+    Reserves 2 slots for high-confidence (80%+) signals.
+    Under $50: 3 positions max
+    $50-$200: 6 positions
+    $200-$1000: 10 positions
+    $1000+: 15 positions
     """
-    if balance < 100:
-        return 2
-    elif balance < 500:
+    if balance < 50:
         return 3
-    elif balance < 2000:
-        return 4
-    else:
+    elif balance < 200:
         return 6
+    elif balance < 1000:
+        return 10
+    else:
+        return 15
 
 # ===================== CIRCUIT BREAKERS (SAFETY) =====================
 # Pause trading if drawdown exceeds threshold
