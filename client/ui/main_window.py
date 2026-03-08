@@ -1677,6 +1677,9 @@ class MainWindow(QMainWindow):
     def _update_balance_ui(self, balance: float):
         """Thread-safe balance UI update"""
         self._total_balance = balance
+        # Keep exchange client's portfolio value in sync for position limit checks
+        if hasattr(self, 'exchange_client') and self.exchange_client:
+            self.exchange_client.last_known_portfolio = balance
         self.balance_label.setText(f"${balance:,.2f}")
 
     def _update_portfolio_ui(self, text: str):
@@ -2014,6 +2017,8 @@ class MainWindow(QMainWindow):
 
                 # Update portfolio display
                 self._total_balance = result['total']
+                # Store on exchange client so order executor can use it for position limits
+                self.exchange_client.last_known_portfolio = self._total_balance
                 self._update_portfolio_from_balances(result.get('balances', {}))
 
                 self._log(f"💵 USDT free (available): ${result['usdt_free']:,.2f}")

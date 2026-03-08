@@ -246,18 +246,23 @@ class OrderExecutor:
 
             # CHECK: Position limit - don't open too many positions (fee drag on small accounts)
             current_positions = len(self.manager.get_all_positions())
-            # Use total portfolio value (free + in positions) for max positions calc
-            try:
-                free_balance = self.exchange.get_balance('USDT')
-                # Estimate total: free USDT + value of all positions
-                position_value = sum(
-                    p.get('entry_price', 0) * p.get('quantity', 0)
-                    for p in self.manager.get_all_positions().values()
-                )
-                total_portfolio = free_balance + position_value
-            except Exception:
-                total_portfolio = 500
+            # Use last known total portfolio value (set by UI on connect/refresh)
+            # This avoids expensive recalculation and is always accurate
+            total_portfolio = getattr(self.exchange, 'last_known_portfolio', 0)
+            if total_portfolio <= 0:
+                # Fallback: estimate from free USDT + tracked position values
+                try:
+                    free_balance = self.exchange.get_balance('USDT')
+                    position_value = sum(
+                        p.get('entry_price', 0) * p.get('quantity', 0)
+                        for p in self.manager.get_all_positions().values()
+                    )
+                    total_portfolio = free_balance + position_value
+                except Exception as e:
+                    logger.warning(f"Portfolio calc failed: {e}, using fallback")
+                    total_portfolio = 500
             max_positions = get_max_positions(total_portfolio)
+            logger.info(f"Position check: {current_positions}/{max_positions} (portfolio=${total_portfolio:.2f})")
             if current_positions >= max_positions:
                 # Check if this is an existing position (update allowed)
                 if not self.manager.get_position(pair):
