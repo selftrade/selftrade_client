@@ -23,6 +23,8 @@ class PositionManager:
         self.persist_file = persist_file
         self.trade_history: List[Dict] = []
         self._lock = threading.RLock()  # Reentrant lock for thread safety
+        self._circuit_breaker_bypassed = False  # Set by UI reset button
+        self.max_consecutive_losses_override = None  # Set by UI spinbox
 
         # Load persisted positions
         self._load_positions()
@@ -530,7 +532,13 @@ class PositionManager:
             return result
 
         # CHECK 3: Consecutive losses
-        if consecutive_losses >= MAX_CONSECUTIVE_LOSSES:
+        # Use UI override if set, otherwise config default
+        max_losses = self.max_consecutive_losses_override or MAX_CONSECUTIVE_LOSSES
+        # Skip if user manually reset the circuit breaker
+        if self._circuit_breaker_bypassed:
+            self._circuit_breaker_bypassed = False  # One-time bypass, resets after first allowed trade
+            logger.info(f"Circuit breaker bypassed by user reset (consecutive losses: {consecutive_losses})")
+        elif consecutive_losses >= max_losses:
             # Check if enough cooldown time has passed since the last loss
             last_loss_time = None
             for trade in reversed(self.trade_history):
@@ -562,7 +570,7 @@ class PositionManager:
                     return result
             else:
                 result['trading_allowed'] = False
-                result['reason'] = f"CIRCUIT BREAKER: {consecutive_losses} consecutive losses (max {MAX_CONSECUTIVE_LOSSES})"
+                result['reason'] = f"CIRCUIT BREAKER: {consecutive_losses} consecutive losses (max {max_losses})"
                 logger.error(result['reason'])
                 return result
 

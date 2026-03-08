@@ -1308,7 +1308,7 @@ class MainWindow(QMainWindow):
         grid.addWidget(cb_label, 4, 0)
 
         cb_row = QHBoxLayout()
-        cb_row.setSpacing(6)
+        cb_row.setSpacing(4)
         self.max_losses_spin = QSpinBox()
         self.max_losses_spin.setRange(2, 20)
         self.max_losses_spin.setValue(5)
@@ -1317,23 +1317,31 @@ class MainWindow(QMainWindow):
         self.max_losses_spin.valueChanged.connect(self._on_max_losses_changed)
         cb_row.addWidget(self.max_losses_spin)
 
-        self.reset_cb_btn = QPushButton("Reset")
-        self.reset_cb_btn.setFixedHeight(36)
-        self.reset_cb_btn.setFixedWidth(60)
+        # Tiny reset button with label underneath
+        reset_container = QVBoxLayout()
+        reset_container.setSpacing(1)
+        reset_container.setContentsMargins(0, 0, 0, 0)
+        self.reset_cb_btn = QPushButton("↺")
+        self.reset_cb_btn.setFixedSize(28, 28)
         self.reset_cb_btn.setToolTip("Reset circuit breaker and resume trading")
         self.reset_cb_btn.setStyleSheet("""
             QPushButton {
-                background: rgba(255, 107, 107, 0.2);
-                border: 1px solid rgba(255, 107, 107, 0.4);
-                border-radius: 6px;
+                background: rgba(255, 107, 107, 0.15);
+                border: 1px solid rgba(255, 107, 107, 0.3);
+                border-radius: 14px;
                 color: #ff6b6b;
-                font-size: 11px;
-                font-weight: 600;
+                font-size: 14px;
+                padding: 0;
             }
             QPushButton:hover { background: rgba(255, 107, 107, 0.35); }
         """)
         self.reset_cb_btn.clicked.connect(self._on_reset_circuit_breaker)
-        cb_row.addWidget(self.reset_cb_btn)
+        reset_container.addWidget(self.reset_cb_btn, 0, Qt.AlignmentFlag.AlignCenter)
+        reset_lbl = QLabel("reset")
+        reset_lbl.setStyleSheet("font-size: 8px; color: rgba(255,107,107,0.5);")
+        reset_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        reset_container.addWidget(reset_lbl)
+        cb_row.addLayout(reset_container)
         grid.addLayout(cb_row, 4, 1)
 
         # Toggles row (auto-trade + futures side by side)
@@ -2079,6 +2087,8 @@ class MainWindow(QMainWindow):
     def _on_max_losses_changed(self, value):
         """Handle circuit breaker max losses change"""
         self._max_consecutive_losses = value
+        if hasattr(self, 'position_manager') and self.position_manager:
+            self.position_manager.max_consecutive_losses_override = value
         self._log(f"Circuit breaker: will pause after {value} consecutive losses")
 
     def _on_reset_circuit_breaker(self):
@@ -2087,13 +2097,10 @@ class MainWindow(QMainWindow):
         self._trading_halted = False
         self._halt_reason = ""
         # Also reset in position manager if available
+        # Set bypass flag in position manager so check_circuit_breaker() allows next trade
         if hasattr(self, 'position_manager') and self.position_manager:
-            try:
-                self.position_manager._consecutive_losses = 0
-                self.position_manager._circuit_breaker_until = None
-            except Exception:
-                pass
-        self._log("Circuit breaker reset — trading resumed, loss counter cleared")
+            self.position_manager._circuit_breaker_bypassed = True
+        self._log("Circuit breaker reset — trading resumed, next signal will execute")
 
     def _refresh_portfolio(self):
         """Refresh portfolio display - uses background thread"""
