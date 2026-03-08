@@ -261,7 +261,8 @@ class OrderExecutor:
                 except Exception as e:
                     logger.warning(f"Portfolio calc failed: {e}, using fallback")
                     total_portfolio = 500
-            max_positions = get_max_positions(total_portfolio)
+            # Use UI override if set, otherwise dynamic from portfolio value
+            max_positions = getattr(self.exchange, 'max_positions_override', 0) or get_max_positions(total_portfolio)
             logger.info(f"Position check: {current_positions}/{max_positions} (portfolio=${total_portfolio:.2f})")
             if current_positions >= max_positions:
                 # Check if this is an existing position (update allowed)

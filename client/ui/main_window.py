@@ -782,49 +782,27 @@ class MainWindow(QMainWindow):
         return header
 
     def _create_warning_banner(self) -> QWidget:
-        """Create IP whitelist warning banner with smooth collapse"""
+        """Create compact IP whitelist warning banner"""
         banner = QFrame()
         banner.setObjectName("warningCard")
-        banner.setMinimumHeight(60)
+        banner.setFixedHeight(36)
         layout = QHBoxLayout(banner)
-        layout.setContentsMargins(15, 10, 15, 10)
-        layout.setSpacing(12)
+        layout.setContentsMargins(10, 4, 10, 4)
+        layout.setSpacing(8)
 
-        icon = QLabel("⚠️")
-        icon.setStyleSheet("font-size: 20px;")
-        icon.setFixedWidth(30)
-        layout.addWidget(icon)
-
-        text_layout = QVBoxLayout()
-        text_layout.setSpacing(2)
-        text_layout.setContentsMargins(0, 0, 0, 0)
-
-        title = QLabel("IP Whitelist Required")
-        title.setStyleSheet("font-size: 13px; font-weight: 700; color: #ffb400;")
-        text_layout.addWidget(title)
-
-        desc = QLabel("Whitelist your IP in exchange API settings to avoid auth errors.")
-        desc.setStyleSheet("font-size: 11px; color: rgba(255, 180, 0, 0.8);")
-        desc.setWordWrap(True)
-        text_layout.addWidget(desc)
-
-        layout.addLayout(text_layout, 1)
+        msg = QLabel("⚠️  Whitelist your IP in exchange API settings to avoid auth errors")
+        msg.setStyleSheet("font-size: 11px; font-weight: 600; color: #ffb400;")
+        layout.addWidget(msg, 1)
 
         close_btn = QPushButton("✕")
-        close_btn.setObjectName("iconBtn")
-        close_btn.setFixedSize(28, 28)
+        close_btn.setFixedSize(22, 22)
         close_btn.setStyleSheet("""
             QPushButton {
-                background: rgba(255, 180, 0, 0.3);
-                border: none;
-                border-radius: 14px;
-                color: #ffb400;
-                font-size: 14px;
-                font-weight: bold;
+                background: rgba(255, 180, 0, 0.25);
+                border: none; border-radius: 11px;
+                color: #ffb400; font-size: 12px; font-weight: bold;
             }
-            QPushButton:hover {
-                background: rgba(255, 180, 0, 0.5);
-            }
+            QPushButton:hover { background: rgba(255, 180, 0, 0.45); }
         """)
         close_btn.clicked.connect(self._hide_warning_banner)
         layout.addWidget(close_btn)
@@ -1217,133 +1195,125 @@ class MainWindow(QMainWindow):
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
 
-        # Content widget - use vertical layout for stats + columns
+        # Content widget
         content = QWidget()
         outer_layout = QVBoxLayout(content)
-        outer_layout.setSpacing(15)
-        outer_layout.setContentsMargins(10, 10, 10, 10)
-
-        # ========== PERFORMANCE STATS DASHBOARD ==========
-        stats_row = QHBoxLayout()
-        stats_row.setSpacing(12)
-
-        # Total P&L Card
-        pnl_card = QFrame()
-        pnl_card.setObjectName("statsCard")
-        pnl_card.setMinimumWidth(160)
-        pnl_card.setMaximumHeight(90)
-        pnl_layout = QVBoxLayout(pnl_card)
-        pnl_layout.setContentsMargins(14, 10, 14, 10)
-        pnl_layout.setSpacing(4)
-
-        pnl_label = QLabel("TOTAL P&L")
-        pnl_label.setObjectName("statLabel")
-        pnl_layout.addWidget(pnl_label)
-
-        self.total_pnl_value = QLabel("$0.00")
-        self.total_pnl_value.setObjectName("statValue")
-        pnl_layout.addWidget(self.total_pnl_value)
-        stats_row.addWidget(pnl_card)
-
-        # Win Rate Card
-        wr_card = QFrame()
-        wr_card.setObjectName("statsCard")
-        wr_card.setMinimumWidth(140)
-        wr_card.setMaximumHeight(90)
-        wr_layout = QVBoxLayout(wr_card)
-        wr_layout.setContentsMargins(14, 10, 14, 10)
-        wr_layout.setSpacing(4)
-
-        wr_label = QLabel("WIN RATE")
-        wr_label.setObjectName("statLabel")
-        wr_layout.addWidget(wr_label)
-
-        self.win_rate_value = QLabel("--")
-        self.win_rate_value.setObjectName("statValue")
-        wr_layout.addWidget(self.win_rate_value)
-        stats_row.addWidget(wr_card)
-
-        # Trades Today Card
-        trades_card = QFrame()
-        trades_card.setObjectName("statsCard")
-        trades_card.setMinimumWidth(130)
-        trades_card.setMaximumHeight(90)
-        trades_layout = QVBoxLayout(trades_card)
-        trades_layout.setContentsMargins(14, 10, 14, 10)
-        trades_layout.setSpacing(4)
-
-        trades_label = QLabel("TRADES TODAY")
-        trades_label.setObjectName("statLabel")
-        trades_layout.addWidget(trades_label)
-
-        self.trades_today_value = QLabel("0")
-        self.trades_today_value.setObjectName("statValue")
-        trades_layout.addWidget(self.trades_today_value)
-        stats_row.addWidget(trades_card)
-
-        # Active Positions Card
-        active_card = QFrame()
-        active_card.setObjectName("statsCard")
-        active_card.setMinimumWidth(130)
-        active_card.setMaximumHeight(90)
-        active_layout = QVBoxLayout(active_card)
-        active_layout.setContentsMargins(14, 10, 14, 10)
-        active_layout.setSpacing(4)
-
-        active_label = QLabel("ACTIVE")
-        active_label.setObjectName("statLabel")
-        active_layout.addWidget(active_label)
-
-        self.active_positions_value = QLabel("0")
-        self.active_positions_value.setObjectName("statValue")
-        active_layout.addWidget(self.active_positions_value)
-        stats_row.addWidget(active_card)
-
-        stats_row.addStretch()
-        outer_layout.addLayout(stats_row)
+        outer_layout.setSpacing(10)
+        outer_layout.setContentsMargins(8, 8, 8, 8)
 
         # ========== MAIN COLUMNS ==========
         main_layout = QHBoxLayout()
-        main_layout.setSpacing(20)
+        main_layout.setSpacing(16)
 
-        # ========== LEFT COLUMN - Settings & Signal ==========
+        # ========== LEFT COLUMN - Stats + Settings + Signal ==========
         left_col = QVBoxLayout()
-        left_col.setSpacing(15)
+        left_col.setSpacing(12)
+
+        # ========== COMPACT STATS DASHBOARD (2x2 grid) ==========
+        stats_frame = QFrame()
+        stats_frame.setObjectName("card")
+        stats_grid = QGridLayout(stats_frame)
+        stats_grid.setSpacing(8)
+        stats_grid.setContentsMargins(12, 10, 12, 10)
+
+        # P&L
+        pnl_mini = QFrame()
+        pnl_mini.setObjectName("statsCard")
+        pnl_mini.setMaximumHeight(65)
+        pnl_l = QVBoxLayout(pnl_mini)
+        pnl_l.setContentsMargins(10, 6, 10, 6)
+        pnl_l.setSpacing(2)
+        pnl_label = QLabel("P&L")
+        pnl_label.setObjectName("statLabel")
+        pnl_l.addWidget(pnl_label)
+        self.total_pnl_value = QLabel("$0.00")
+        self.total_pnl_value.setObjectName("statValue")
+        self.total_pnl_value.setStyleSheet("font-size: 20px; font-weight: 800;")
+        pnl_l.addWidget(self.total_pnl_value)
+        stats_grid.addWidget(pnl_mini, 0, 0)
+
+        # Win Rate
+        wr_mini = QFrame()
+        wr_mini.setObjectName("statsCard")
+        wr_mini.setMaximumHeight(65)
+        wr_l = QVBoxLayout(wr_mini)
+        wr_l.setContentsMargins(10, 6, 10, 6)
+        wr_l.setSpacing(2)
+        wr_label = QLabel("WIN RATE")
+        wr_label.setObjectName("statLabel")
+        wr_l.addWidget(wr_label)
+        self.win_rate_value = QLabel("--")
+        self.win_rate_value.setObjectName("statValue")
+        self.win_rate_value.setStyleSheet("font-size: 20px; font-weight: 800;")
+        wr_l.addWidget(self.win_rate_value)
+        stats_grid.addWidget(wr_mini, 0, 1)
+
+        # Trades Today
+        trades_mini = QFrame()
+        trades_mini.setObjectName("statsCard")
+        trades_mini.setMaximumHeight(65)
+        tr_l = QVBoxLayout(trades_mini)
+        tr_l.setContentsMargins(10, 6, 10, 6)
+        tr_l.setSpacing(2)
+        trades_label = QLabel("TODAY")
+        trades_label.setObjectName("statLabel")
+        tr_l.addWidget(trades_label)
+        self.trades_today_value = QLabel("0")
+        self.trades_today_value.setObjectName("statValue")
+        self.trades_today_value.setStyleSheet("font-size: 20px; font-weight: 800;")
+        tr_l.addWidget(self.trades_today_value)
+        stats_grid.addWidget(trades_mini, 1, 0)
+
+        # Active Positions
+        active_mini = QFrame()
+        active_mini.setObjectName("statsCard")
+        active_mini.setMaximumHeight(65)
+        ac_l = QVBoxLayout(active_mini)
+        ac_l.setContentsMargins(10, 6, 10, 6)
+        ac_l.setSpacing(2)
+        active_label = QLabel("ACTIVE")
+        active_label.setObjectName("statLabel")
+        ac_l.addWidget(active_label)
+        self.active_positions_value = QLabel("0")
+        self.active_positions_value.setObjectName("statValue")
+        self.active_positions_value.setStyleSheet("font-size: 20px; font-weight: 800;")
+        ac_l.addWidget(self.active_positions_value)
+        stats_grid.addWidget(active_mini, 1, 1)
+
+        left_col.addWidget(stats_frame)
 
         # Trading Settings Card
         settings_card = QFrame()
         settings_card.setObjectName("card")
         settings_layout = QVBoxLayout(settings_card)
-        settings_layout.setSpacing(18)
+        settings_layout.setSpacing(10)
+        settings_layout.setContentsMargins(14, 10, 14, 10)
 
         # Header
         settings_header = QHBoxLayout()
-        settings_icon = QLabel("⚙️")
-        settings_icon.setStyleSheet("font-size: 24px;")
-        settings_header.addWidget(settings_icon)
-
         settings_title = QLabel("Trading Settings")
         settings_title.setObjectName("sectionTitle")
+        settings_title.setStyleSheet("font-size: 14px; font-weight: 700; color: #b0b8d0;")
         settings_header.addWidget(settings_title, 1)
         settings_layout.addLayout(settings_header)
 
         # Settings grid
         grid = QGridLayout()
-        grid.setSpacing(15)
+        grid.setSpacing(8)
 
         # Trading pair
-        pair_label = QLabel("Trading Pair")
+        pair_label = QLabel("Pair")
         pair_label.setObjectName("fieldLabel")
         grid.addWidget(pair_label, 0, 0)
 
         self.pair_combo = QComboBox()
-        self.pair_combo.setMinimumHeight(45)
+        self.pair_combo.setMinimumHeight(36)
         for pair in SUPPORTED_PAIRS:
             self.pair_combo.addItem(f"  {pair}")
         grid.addWidget(self.pair_combo, 0, 1)
 
         # Risk per trade
-        risk_label = QLabel("Risk per Trade")
+        risk_label = QLabel("Risk %")
         risk_label.setObjectName("fieldLabel")
         grid.addWidget(risk_label, 1, 0)
 
@@ -1352,12 +1322,12 @@ class MainWindow(QMainWindow):
         self.risk_spin.setValue(DEFAULT_RISK_PERCENT)
         self.risk_spin.setSingleStep(0.5)
         self.risk_spin.setSuffix(" %")
-        self.risk_spin.setMinimumHeight(45)
+        self.risk_spin.setMinimumHeight(36)
         self.risk_spin.valueChanged.connect(self._on_risk_changed)
         grid.addWidget(self.risk_spin, 1, 1)
 
         # Minimum confidence
-        conf_label = QLabel("Min Confidence")
+        conf_label = QLabel("Min Conf")
         conf_label.setObjectName("fieldLabel")
         grid.addWidget(conf_label, 2, 0)
 
@@ -1365,38 +1335,40 @@ class MainWindow(QMainWindow):
         self.confidence_spin.setRange(0.3, 1.0)
         self.confidence_spin.setValue(MIN_CONFIDENCE)
         self.confidence_spin.setSingleStep(0.05)
-        self.confidence_spin.setMinimumHeight(45)
+        self.confidence_spin.setMinimumHeight(36)
         grid.addWidget(self.confidence_spin, 2, 1)
+
+        # Max positions
+        max_pos_label = QLabel("Max Pos")
+        max_pos_label.setObjectName("fieldLabel")
+        grid.addWidget(max_pos_label, 3, 0)
+
+        self.max_positions_spin = QSpinBox()
+        self.max_positions_spin.setRange(1, 20)
+        self.max_positions_spin.setValue(10)
+        self.max_positions_spin.setMinimumHeight(36)
+        self.max_positions_spin.setToolTip("Max open positions. Last 2 slots reserved for 80%+ confidence.")
+        self.max_positions_spin.valueChanged.connect(self._on_max_positions_changed)
+        grid.addWidget(self.max_positions_spin, 3, 1)
 
         settings_layout.addLayout(grid)
 
-        # Auto-trade toggle
-        self.auto_trade_check = QCheckBox("  🤖  Enable Auto-Trading")
-        self.auto_trade_check.setStyleSheet("font-size: 15px; font-weight: 600; padding: 10px 0;")
-        self.auto_trade_check.stateChanged.connect(self._on_auto_trade_changed)
-        settings_layout.addWidget(self.auto_trade_check)
+        # Toggles row (auto-trade + futures side by side)
+        toggles_row = QHBoxLayout()
+        toggles_row.setSpacing(8)
 
-        # Futures trading toggle (1x leverage, allows SHORT in down markets)
-        self.futures_check = QCheckBox("  📉  Enable Futures (1x leverage)")
-        self.futures_check.setStyleSheet("""
-            QCheckBox {
-                font-size: 14px;
-                font-weight: 600;
-                padding: 8px 0;
-                color: #ffa500;
-            }
-            QCheckBox::indicator:checked {
-                background: #ffa500;
-                border-color: #ffa500;
-            }
-        """)
-        self.futures_check.setToolTip(
-            "Enable futures trading with 1x leverage (isolated margin).\n"
-            "Allows SHORT positions in down markets.\n"
-            "⚠️ Only for Binance/Bybit. Same risk as spot at 1x."
-        )
+        self.auto_trade_check = QCheckBox("  Auto-Trade")
+        self.auto_trade_check.setStyleSheet("font-size: 13px; font-weight: 600; padding: 6px 0;")
+        self.auto_trade_check.stateChanged.connect(self._on_auto_trade_changed)
+        toggles_row.addWidget(self.auto_trade_check)
+
+        self.futures_check = QCheckBox("  Futures (1x)")
+        self.futures_check.setStyleSheet("font-size: 13px; font-weight: 600; padding: 6px 0; color: #ffa500;")
+        self.futures_check.setToolTip("Enable futures (1x leverage, isolated). Allows SHORT in down markets.")
         self.futures_check.stateChanged.connect(self._on_futures_changed)
-        settings_layout.addWidget(self.futures_check)
+        toggles_row.addWidget(self.futures_check)
+
+        settings_layout.addLayout(toggles_row)
 
         left_col.addWidget(settings_card)
 
@@ -1482,11 +1454,11 @@ class MainWindow(QMainWindow):
         left_col.addWidget(signal_card)
 
         left_col.addStretch()
-        main_layout.addLayout(left_col, 1)
+        main_layout.addLayout(left_col, 2)
 
         # ========== RIGHT COLUMN - Positions ==========
         right_col = QVBoxLayout()
-        right_col.setSpacing(20)
+        right_col.setSpacing(12)
 
         positions_card = QFrame()
         positions_card.setObjectName("card")
@@ -1513,16 +1485,16 @@ class MainWindow(QMainWindow):
         primary_btns = QHBoxLayout()
         primary_btns.setSpacing(10)
 
-        self.close_all_btn = QPushButton("🛑  Close All")
+        self.close_all_btn = QPushButton("Close All")
         self.close_all_btn.setObjectName("dangerBtn")
-        self.close_all_btn.setMinimumHeight(45)
+        self.close_all_btn.setMinimumHeight(38)
         self.close_all_btn.setToolTip("Close all positions at market price")
         self.close_all_btn.clicked.connect(self._on_close_all)
         primary_btns.addWidget(self.close_all_btn)
 
-        self.resync_btn = QPushButton("🔄  Sync")
+        self.resync_btn = QPushButton("Sync")
         self.resync_btn.setObjectName("secondaryBtn")
-        self.resync_btn.setMinimumHeight(45)
+        self.resync_btn.setMinimumHeight(38)
         self.resync_btn.setToolTip("Sync positions from exchange")
         self.resync_btn.clicked.connect(self._on_resync_positions)
         primary_btns.addWidget(self.resync_btn)
@@ -1598,7 +1570,7 @@ class MainWindow(QMainWindow):
         positions_layout.addWidget(self.advanced_frame)
 
         right_col.addWidget(positions_card)
-        main_layout.addLayout(right_col, 1)
+        main_layout.addLayout(right_col, 3)
 
         # Add main columns to outer layout
         outer_layout.addLayout(main_layout)
@@ -2110,6 +2082,12 @@ class MainWindow(QMainWindow):
         """Handle risk change"""
         self.position_sizer.set_risk_percent(value)
         self._log(f"Risk per trade set to {value}%")
+
+    def _on_max_positions_changed(self, value):
+        """Handle max positions change — store on exchange client for order executor"""
+        if hasattr(self, 'exchange_client') and self.exchange_client:
+            self.exchange_client.max_positions_override = value
+        self._log(f"Max positions set to {value} (last 2 reserved for 80%+ confidence)")
 
     def _refresh_portfolio(self):
         """Refresh portfolio display - uses background thread"""
@@ -2855,6 +2833,13 @@ class MainWindow(QMainWindow):
                     'api_key': self.exchange_api_key.text().strip(),
                     'api_secret': self.exchange_api_secret.text().strip(),
                     'testnet': self.testnet_check.isChecked()
+                },
+                'trading': {
+                    'risk_percent': self.risk_spin.value(),
+                    'min_confidence': self.confidence_spin.value(),
+                    'max_positions': self.max_positions_spin.value(),
+                    'auto_trade': self.auto_trade_check.isChecked(),
+                    'futures_enabled': self.futures_check.isChecked()
                 }
             }
             with open(CONFIG_FILE, 'w') as f:
@@ -2897,7 +2882,20 @@ class MainWindow(QMainWindow):
             if exchange.get('testnet'):
                 self.testnet_check.setChecked(True)
 
-            logger.info("Applied saved credentials to input fields")
+            # Trading settings
+            trading = self._saved_config.get('trading', {})
+            if trading.get('risk_percent') is not None:
+                self.risk_spin.setValue(trading['risk_percent'])
+            if trading.get('min_confidence') is not None:
+                self.confidence_spin.setValue(trading['min_confidence'])
+            if trading.get('max_positions') is not None:
+                self.max_positions_spin.setValue(trading['max_positions'])
+            if trading.get('auto_trade'):
+                self.auto_trade_check.setChecked(True)
+            if trading.get('futures_enabled'):
+                self.futures_check.setChecked(True)
+
+            logger.info("Applied saved credentials and trading settings")
         except Exception as e:
             logger.warning(f"Could not apply saved credentials: {e}")
 
@@ -3012,27 +3010,49 @@ class MainWindow(QMainWindow):
                 self.win_rate_value.setText("--")
                 self.win_rate_value.setObjectName("statValue")
 
-            # Count trades today
+            # Count trades today (check exit_time first, then entry_time, then timestamp)
             from datetime import datetime, timedelta
             today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
             trades_today = 0
+
+            # Count from trade_history (closed trades)
             if trade_history:
                 for t in trade_history:
-                    trade_time = t.get('timestamp', t.get('entry_timestamp'))
+                    trade_time = t.get('exit_time') or t.get('entry_time') or t.get('timestamp') or t.get('entry_timestamp')
                     if trade_time:
-                        if isinstance(trade_time, str):
-                            try:
+                        try:
+                            if isinstance(trade_time, str):
                                 trade_dt = datetime.fromisoformat(trade_time.replace('Z', '+00:00'))
-                            except (ValueError, TypeError):
-                                # Failed to parse timestamp, skip this trade
-                                continue
-                        elif isinstance(trade_time, (int, float)):
-                            trade_dt = datetime.fromtimestamp(trade_time)
-                        else:
-                            trade_dt = trade_time
+                            elif isinstance(trade_time, (int, float)):
+                                trade_dt = datetime.fromtimestamp(trade_time)
+                            else:
+                                trade_dt = trade_time
+                            # Make naive for comparison if needed
+                            if hasattr(trade_dt, 'tzinfo') and trade_dt.tzinfo is not None:
+                                trade_dt = trade_dt.replace(tzinfo=None)
+                            if trade_dt >= today_start:
+                                trades_today += 1
+                        except (ValueError, TypeError, OSError):
+                            continue
 
-                        if trade_dt >= today_start:
-                            trades_today += 1
+            # Also count active positions opened today
+            if positions:
+                for pos in positions.values():
+                    entry_time = pos.get('entry_time')
+                    if entry_time:
+                        try:
+                            if isinstance(entry_time, str):
+                                entry_dt = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
+                            elif isinstance(entry_time, (int, float)):
+                                entry_dt = datetime.fromtimestamp(entry_time)
+                            else:
+                                entry_dt = entry_time
+                            if hasattr(entry_dt, 'tzinfo') and entry_dt.tzinfo is not None:
+                                entry_dt = entry_dt.replace(tzinfo=None)
+                            if entry_dt >= today_start:
+                                trades_today += 1
+                        except (ValueError, TypeError, OSError):
+                            continue
 
             self.trades_today_value.setText(str(trades_today))
 
