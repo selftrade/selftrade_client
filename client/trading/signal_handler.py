@@ -16,7 +16,7 @@ class SignalHandler:
     def __init__(self, api_key: str = None):
         self.api_key = api_key
         self.last_signals: Dict[str, Dict] = {}
-        self.signal_ttl_seconds = 30
+        self.signal_ttl_seconds = 120  # 2 minutes — was 30s which expired before execution
 
     def set_api_key(self, api_key: str):
         """Set API key for signature verification"""

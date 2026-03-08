@@ -8,7 +8,7 @@ VERSION_NAME = "SelfTrade Client"
 
 # ===================== SERVER =====================
 SERVER_URL = os.getenv("SELFTRADE_SERVER_URL", "https://www.selftrade.site")
-WS_URL = os.getenv("SELFTRADE_WS_URL", "wss://www.selftrade.site/ws/signals")
+WS_URL = os.getenv("SELFTRADE_WS_URL", "wss://www.selftrade.site/ws/live")
 
 # ===================== SUPPORTED EXCHANGES =====================
 SUPPORTED_EXCHANGES = ["binance", "mexc", "bybit"]
@@ -20,13 +20,30 @@ MAX_RISK_PERCENT = 10.0
 MIN_TRADE_VALUE_USDT = 12.0  # Binance SPOT minimum notional is ~$5-10, use $12 for safety
 MIN_FUTURES_TRADE_VALUE = 6.0  # Binance FUTURES minimum notional is ~$5, use $6 for safety
 MAX_POSITION_PERCENT = 25.0  # Max 25% of portfolio in single position
-MIN_CONFIDENCE = 0.42  # Minimum confidence to execute — server now pre-filters with CVD + extreme fear floor
+MIN_CONFIDENCE = 0.60  # 60%+ edge required — anything less isn't worth the fees
 
-# ===================== POSITION LIMITS (SMALL ACCOUNT OPTIMIZATION) =====================
-# For accounts <$200, limit positions to reduce fee drag
-MAX_CONCURRENT_POSITIONS = 10  # Max 10 positions at a time
+# ===================== POSITION LIMITS (DYNAMIC BY BALANCE) =====================
+# Tiny accounts can't afford 4 positions — fees eat everything.
+# Scale positions with account size.
+MAX_CONCURRENT_POSITIONS = 4   # Default (overridden by get_max_positions)
 PREFER_FUTURES = True  # Prefer futures over spot (0.04% vs 0.1% fees)
-MIN_CONFIDENCE_FOR_SPOT = 0.48  # Only open spot if confidence >48% (was 60% - blocked too many valid signals)
+MIN_CONFIDENCE_FOR_SPOT = 0.48
+
+def get_max_positions(balance: float) -> int:
+    """Dynamic max positions based on account balance.
+    Under $100: 2 positions max (each needs $30+ to overcome fees)
+    $100-$500: 3 positions
+    $500-$2000: 4 positions
+    $2000+: 6 positions
+    """
+    if balance < 100:
+        return 2
+    elif balance < 500:
+        return 3
+    elif balance < 2000:
+        return 4
+    else:
+        return 6
 
 # ===================== CIRCUIT BREAKERS (SAFETY) =====================
 # Pause trading if drawdown exceeds threshold
@@ -37,26 +54,38 @@ MAX_CONSECUTIVE_LOSSES = 5  # Pause after 5 consecutive losses
 MIN_WIN_RATE_THRESHOLD = 0.30  # Pause if win rate drops below 30% (min 10 trades)
 
 # ===================== FEE CONFIGURATION =====================
-# Exchange trading fees (maker/taker) - used for P&L and position sizing
-EXCHANGE_FEES: Dict[str, float] = {
-    "binance": 0.001,   # 0.1% per trade
-    "mexc": 0.001,      # 0.1% per trade (can be lower with MX token)
-    "bybit": 0.001,     # 0.1% per trade
+# SPOT fees: ~0.1% taker (0.075% with BNB on Binance)
+# FUTURES fees: ~0.04% taker — THIS IS WHY WE PREFER FUTURES
+# Wrong fees = wrong P&L = fake "wins" that are actually losses after fees
+EXCHANGE_FEES_SPOT: Dict[str, float] = {
+    "binance": 0.00075,  # 0.075% with BNB discount
+    "mexc": 0.001,       # 0.1%
+    "bybit": 0.001,      # 0.1%
     "default": 0.001,
 }
-# Round trip fee = entry fee + exit fee
-ROUND_TRIP_FEE_MULTIPLIER = 2  # Buy + Sell = 2x single fee
 
-# Slippage buffer for market orders (added to fees for safety)
-SLIPPAGE_BUFFER = 0.0005  # 0.05% slippage buffer
+EXCHANGE_FEES_FUTURES: Dict[str, float] = {
+    "binance": 0.0004,   # 0.04% taker
+    "mexc": 0.0004,      # 0.04% taker
+    "bybit": 0.00055,    # 0.055% taker
+    "default": 0.0005,
+}
 
-def get_trading_fee(exchange: str) -> float:
-    """Get trading fee for exchange"""
-    return EXCHANGE_FEES.get(exchange.lower(), EXCHANGE_FEES["default"])
+# Legacy compat
+EXCHANGE_FEES: Dict[str, float] = EXCHANGE_FEES_SPOT
 
-def get_round_trip_cost(exchange: str) -> float:
+ROUND_TRIP_FEE_MULTIPLIER = 2
+SLIPPAGE_BUFFER = 0.0003  # 0.03% (was 0.05%)
+
+def get_trading_fee(exchange: str, market: str = "spot") -> float:
+    """Get trading fee. market='spot' or 'futures'."""
+    if market == "futures":
+        return EXCHANGE_FEES_FUTURES.get(exchange.lower(), EXCHANGE_FEES_FUTURES["default"])
+    return EXCHANGE_FEES_SPOT.get(exchange.lower(), EXCHANGE_FEES_SPOT["default"])
+
+def get_round_trip_cost(exchange: str, market: str = "spot") -> float:
     """Get total round trip cost (fees + slippage)"""
-    fee = get_trading_fee(exchange)
+    fee = get_trading_fee(exchange, market)
     return (fee * ROUND_TRIP_FEE_MULTIPLIER) + SLIPPAGE_BUFFER
 
 # ===================== PRECISION RULES =====================
@@ -81,7 +110,6 @@ PRECISION_RULES: Dict[str, Dict[str, Dict[str, int]]] = {
         "APTUSDT": {"price": 3, "qty": 2},
         "TONUSDT": {"price": 3, "qty": 2},
         "INJUSDT": {"price": 3, "qty": 2},
-        "BNBUSDT": {"price": 2, "qty": 3},
         "DOTUSDT": {"price": 3, "qty": 2},
         "ARBUSDT": {"price": 4, "qty": 1},
         "OPUSDT":  {"price": 4, "qty": 1},

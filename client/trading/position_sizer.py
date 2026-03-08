@@ -30,7 +30,9 @@ class PositionSizer:
         confidence: float = 1.0,
         min_trade_value: float = None,
         regime: str = None,
-        microstructure: Dict[str, Any] = None
+        microstructure: Dict[str, Any] = None,
+        consecutive_losses: int = 0,
+        take_profit: float = None
     ) -> Dict[str, Any]:
         """
         Calculate position size based on risk management.
@@ -44,6 +46,7 @@ class PositionSizer:
             regime: Market regime for adaptive sizing
             microstructure: Parsed microstructure dict from SignalHandler._parse_microstructure()
                             Contains conviction_boost (-0.30 to +0.30) that adjusts size
+            consecutive_losses: Number of recent consecutive losing trades (0 = no streak)
 
         Returns:
             Dict with quantity, usdt_value, risk_amount, etc.
@@ -94,6 +97,8 @@ class PositionSizer:
                     regime_multiplier = 0.85  # Was 0.7
                 elif regime in ['TRENDING_UP_STRONG', 'TRENDING_DOWN_STRONG']:
                     regime_multiplier = 1.2  # Risk 20% more in strong trends
+                elif regime in ['TREND_EXHAUSTING_UP', 'TREND_EXHAUSTING_DOWN']:
+                    regime_multiplier = 0.75  # Potential reversal — reduce size
                 elif regime in ['HIGH_VOLATILITY']:
                     regime_multiplier = 0.7  # Was 0.6
                     logger.debug(f"Regime {regime}: Reducing risk by 30%")
@@ -114,8 +119,19 @@ class PositionSizer:
                     logger.info(f"Microstructure multiplier: {micro_multiplier:.2f}x "
                                 f"(boost={boost:+.2f}, summary={microstructure.get('summary', [])})")
 
-            # Calculate risk per trade based on confidence, regime, AND microstructure
-            effective_risk = self.risk_percent * max(confidence, 0.5) * regime_multiplier * micro_multiplier
+            # ===== CONSECUTIVE LOSS REDUCTION =====
+            # After 3+ losses, reduce size progressively to protect capital.
+            # 3 losses: 70% size. 4 losses: 50%. 5+: circuit breaker handles it.
+            loss_multiplier = 1.0
+            if consecutive_losses >= 3:
+                loss_multiplier = 0.70
+                logger.info(f"Loss streak ({consecutive_losses}): reducing size to 70%")
+            if consecutive_losses >= 4:
+                loss_multiplier = 0.50
+                logger.info(f"Loss streak ({consecutive_losses}): reducing size to 50%")
+
+            # Calculate risk per trade based on confidence, regime, microstructure, AND loss streak
+            effective_risk = self.risk_percent * max(confidence, 0.5) * regime_multiplier * micro_multiplier * loss_multiplier
             risk_amount = balance * (effective_risk / 100)
 
             # Calculate position size based on risk
@@ -157,7 +173,7 @@ class PositionSizer:
                 'usdt_value': position_size_usdt,
                 'risk_amount': risk_amount,
                 'stop_distance_percent': stop_distance_percent * 100,
-                'risk_reward_ratio': self._calculate_rr_ratio(entry_price, stop_loss, position_size_usdt),
+                'risk_reward_ratio': self._calculate_rr_ratio(entry_price, stop_loss, take_profit if take_profit else 0),
                 'position_percent': (position_size_usdt / balance) * 100
             }
 
@@ -170,11 +186,15 @@ class PositionSizer:
                 'usdt_value': 0
             }
 
-    def _calculate_rr_ratio(self, entry: float, stop: float, size: float) -> float:
-        """Calculate risk/reward ratio assuming 2:1 target"""
+    def _calculate_rr_ratio(self, entry: float, stop: float, take_profit: float) -> float:
+        """Calculate actual risk/reward ratio from entry, stop, and take profit prices."""
         stop_distance = abs(entry - stop)
-        target_distance = stop_distance * 2  # 2:1 ratio
-        return 2.0  # Default 2:1
+        if stop_distance == 0:
+            return 2.0
+        if take_profit > 0 and take_profit != entry:
+            target_distance = abs(take_profit - entry)
+            return round(target_distance / stop_distance, 2)
+        return 2.0
 
     def adjust_for_volatility(self, base_size: float, volatility: float, avg_volatility: float = 0.02) -> float:
         """Adjust position size based on current volatility"""

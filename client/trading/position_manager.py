@@ -41,8 +41,8 @@ class PositionManager:
     ):
         """Add a new position (spot or futures) - thread-safe"""
         with self._lock:
-            # Calculate entry fee
-            entry_fee = entry_price * quantity * get_trading_fee(exchange)
+            # Calculate entry fee using correct fee tier (futures are much cheaper)
+            entry_fee = entry_price * quantity * get_trading_fee(exchange, market)
 
             self.positions[pair.upper()] = {
                 'pair': pair.upper(),
@@ -202,8 +202,9 @@ class PositionManager:
                 pnl_gross = (thesis_entry - current_price) * quantity
                 pnl_pct_gross = ((thesis_entry - current_price) / thesis_entry) * 100
 
-            # Calculate exit fee (estimated) - only pay this once when actually exiting
-            exit_fee = current_price * quantity * get_trading_fee(exchange)
+            # Calculate exit fee using correct market type (futures = 0.04%, spot = 0.1%)
+            market = position.get('market', 'spot')
+            exit_fee = current_price * quantity * get_trading_fee(exchange, market)
 
             # Total fees = entry fee (already paid when we bought) + exit fee (will pay when we sell)
             # This is the same regardless of how many times we flipped the thesis
@@ -235,6 +236,18 @@ class PositionManager:
         with self._lock:
             return len(self.positions)
 
+    def get_consecutive_losses(self) -> int:
+        """Count consecutive losses from most recent trades — thread-safe"""
+        with self._lock:
+            count = 0
+            for trade in reversed(self.trade_history):
+                pnl = trade.get('unrealized_pnl_net', trade.get('unrealized_pnl', 0))
+                if pnl < 0:
+                    count += 1
+                else:
+                    break
+            return count
+
     def get_total_unrealized_pnl(self) -> float:
         """Get total unrealized P&L - thread-safe"""
         with self._lock:
@@ -251,17 +264,19 @@ class PositionManager:
                 'profit_factor': 0
             }
 
-        wins = [t for t in self.trade_history if t.get('unrealized_pnl', 0) > 0]
-        losses = [t for t in self.trade_history if t.get('unrealized_pnl', 0) <= 0]
+        # Use NET P&L (after fees) for win/loss classification
+        # $0.05 gross profit - $0.12 fees = NET LOSS, not a win
+        wins = [t for t in self.trade_history if t.get('unrealized_pnl_net', t.get('unrealized_pnl', 0)) > 0]
+        losses = [t for t in self.trade_history if t.get('unrealized_pnl_net', t.get('unrealized_pnl', 0)) <= 0]
 
         total_trades = len(self.trade_history)
         win_rate = len(wins) / total_trades * 100 if total_trades > 0 else 0
 
-        avg_win = sum(t.get('unrealized_pnl', 0) for t in wins) / len(wins) if wins else 0
-        avg_loss = abs(sum(t.get('unrealized_pnl', 0) for t in losses) / len(losses)) if losses else 0
+        avg_win = sum(t.get('unrealized_pnl_net', t.get('unrealized_pnl', 0)) for t in wins) / len(wins) if wins else 0
+        avg_loss = abs(sum(t.get('unrealized_pnl_net', t.get('unrealized_pnl', 0)) for t in losses) / len(losses)) if losses else 0
 
-        total_wins = sum(t.get('unrealized_pnl', 0) for t in wins)
-        total_losses = abs(sum(t.get('unrealized_pnl', 0) for t in losses))
+        total_wins = sum(t.get('unrealized_pnl_net', t.get('unrealized_pnl', 0)) for t in wins)
+        total_losses = abs(sum(t.get('unrealized_pnl_net', t.get('unrealized_pnl', 0)) for t in losses))
         profit_factor = total_wins / total_losses if total_losses > 0 else 0
 
         return {
@@ -469,9 +484,9 @@ class PositionManager:
             else:
                 break
 
-        # Calculate win rate (last 10+ trades)
+        # Calculate win rate (last 10+ trades) — use NET P&L (after fees)
         recent_trades = self.trade_history[-20:] if len(self.trade_history) >= 10 else []
-        wins = sum(1 for t in recent_trades if t.get('unrealized_pnl', 0) > 0)
+        wins = sum(1 for t in recent_trades if t.get('unrealized_pnl_net', t.get('unrealized_pnl', 0)) > 0)
         win_rate = (wins / len(recent_trades)) if recent_trades else 0.5
 
         result['stats'] = {
@@ -579,7 +594,7 @@ class PositionManager:
                     pass
 
         total_pnl = sum(t.get('unrealized_pnl_net', t.get('unrealized_pnl', 0)) for t in today_trades)
-        wins = sum(1 for t in today_trades if t.get('unrealized_pnl', 0) > 0)
+        wins = sum(1 for t in today_trades if t.get('unrealized_pnl_net', t.get('unrealized_pnl', 0)) > 0)
         losses = len(today_trades) - wins
 
         return {

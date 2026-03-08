@@ -9,7 +9,7 @@ from client.trading.position_sizer import PositionSizer
 from client.trading.position_manager import PositionManager
 from client.config import (
     MIN_TRADE_VALUE_USDT, MIN_FUTURES_TRADE_VALUE, is_pair_supported, get_exchange_symbol,
-    MAX_CONCURRENT_POSITIONS, PREFER_FUTURES, MIN_CONFIDENCE_FOR_SPOT
+    PREFER_FUTURES, MIN_CONFIDENCE_FOR_SPOT, get_max_positions
 )
 
 if TYPE_CHECKING:
@@ -246,12 +246,14 @@ class OrderExecutor:
 
             # CHECK: Position limit - don't open too many positions (fee drag on small accounts)
             current_positions = len(self.manager.get_all_positions())
-            if current_positions >= MAX_CONCURRENT_POSITIONS:
+            balance = self.exchange.get_balance() if hasattr(self.exchange, 'get_balance') else 500
+            max_positions = get_max_positions(balance)
+            if current_positions >= max_positions:
                 # Check if this is an existing position (update allowed)
                 if not self.manager.get_position(pair):
                     return {
                         'success': False,
-                        'reason': f"Position limit reached ({current_positions}/{MAX_CONCURRENT_POSITIONS}) - close existing positions first",
+                        'reason': f"Position limit reached ({current_positions}/{max_positions}) - close existing positions first",
                         'order': None,
                         'position_limit': True
                     }
@@ -373,30 +375,52 @@ class OrderExecutor:
                 # Get current thesis (may be different from actual holding)
                 current_thesis = existing_position.get('thesis', existing_side)
 
-                # Case 1: Opposite signal → FLIP thesis instead of closing (SAVES FEES!)
-                # SHORT signal on LONG thesis → flip to SHORT thesis
-                # LONG signal on SHORT thesis → flip to LONG thesis
+                # Case 1: Opposite signal → handle thesis flip
                 if (side in ['short', 'sell'] and current_thesis in ['long', 'buy']) or \
                    (side in ['long', 'buy'] and current_thesis in ['short', 'sell']):
 
+                    is_futures = existing_position.get('market') == 'futures'
+
+                    # SPOT LONG→SHORT: Must SELL the asset first (can't be short on spot)
+                    # This was a critical bug — flipping thesis without selling meant
+                    # holding a depreciating asset while labeled "short"
+                    if not is_futures and side in ['short', 'sell'] and current_thesis in ['long', 'buy']:
+                        logger.info(f"SPOT FLIP {pair}: LONG→SHORT — SELLING asset first (can't short on spot)")
+
+                        if not dry_run:
+                            # Close the LONG position by selling
+                            self.manager.remove_position(pair)
+                            sell_result = self._execute_sell(pair, entry_price, stop_loss, take_profit, confidence, dry_run, regime)
+                            if sell_result.get('success'):
+                                logger.info(f"SPOT FLIP {pair}: Sold asset successfully — position closed")
+                                sell_result['action'] = 'spot_flip_sold'
+                                sell_result['message'] = f"LONG→SHORT flip: sold {pair} on spot (can't hold short)"
+                            return sell_result
+                        else:
+                            return {
+                                'success': True,
+                                'dry_run': True,
+                                'pair': pair,
+                                'side': side,
+                                'action': 'spot_flip_sold',
+                                'message': f"Would sell {pair} for LONG→SHORT flip on spot"
+                            }
+
+                    # FUTURES: Flip thesis without trading (just invert SL/TP direction)
                     logger.info(f"FLIP {pair}: {current_thesis.upper()} → {side.upper()} (NO TRADING FEE)")
 
                     if not dry_run:
                         # SAFETY CHECK: Verify exchange balance matches position before flipping
-                        # Prevents SL/TP logic inversion if pending trades haven't settled
                         position = self.manager.get_position(pair)
                         if position:
                             expected_qty = position.get('quantity', 0)
                             base_asset = pair.replace('USDT', '').replace('USDC', '').replace('BUSD', '')
 
                             try:
-                                # Verify actual exchange balance matches expected quantity
                                 actual_balance = self.exchange.get_total_balance(base_asset)
                                 balance_diff_pct = abs(actual_balance - expected_qty) / expected_qty * 100 if expected_qty > 0 else 0
 
                                 if balance_diff_pct > 90.0:
-                                    # Position is essentially gone (SL/TP already sold it, only dust remains).
-                                    # Clean up the stale position and open this signal as a fresh trade.
                                     logger.warning(
                                         f"STALE POSITION cleaned: {pair} expected {expected_qty:.6f} but only "
                                         f"{actual_balance:.6f} remains ({balance_diff_pct:.1f}% diff). "
@@ -404,7 +428,7 @@ class OrderExecutor:
                                     )
                                     self.manager.remove_position(pair)
                                     return self.execute_signal(signal, dry_run=dry_run)
-                                elif balance_diff_pct > 5.0:  # More than 5% difference
+                                elif balance_diff_pct > 5.0:
                                     logger.error(
                                         f"FLIP ABORTED: {pair} balance mismatch. "
                                         f"Expected: {expected_qty:.6f}, Actual: {actual_balance:.6f} "
@@ -675,9 +699,11 @@ class OrderExecutor:
         """Execute a BUY/LONG order using USDT balance"""
         # Get USDT balance and calculate size (with regime + microstructure conviction)
         balance = self.exchange.get_balance('USDT')
+        loss_streak = self.manager.get_consecutive_losses() if self.manager else 0
         size_result = self.sizer.calculate_position_size(
             balance, entry_price, stop_loss, confidence, regime=regime,
-            microstructure=microstructure
+            microstructure=microstructure, consecutive_losses=loss_streak,
+            take_profit=take_profit
         )
 
         if not size_result['valid']:
@@ -826,9 +852,8 @@ class OrderExecutor:
         available_usdt_value = asset_info['usdt_value']
         current_price = asset_info.get('price', entry_price)
 
-        # Sell most of position on exit signals - holding leftovers accumulates risk
-        # Always sell at least 90% to avoid leftover positions that bleed from fees
-        sell_percent = min(0.90 + (confidence * 0.08), 0.98)  # 90% to 98% based on confidence
+        # Sell 100% on exit signals — holding leftovers accumulates risk and fee drag
+        sell_percent = 1.0
         quantity = available_amount * sell_percent
 
         # Ensure minimum trade value
@@ -978,11 +1003,13 @@ class OrderExecutor:
 
         logger.info(f"Futures LONG: balance=${futures_balance:.2f} (min required: ${bybit_min_notional})")
 
-        # Calculate position size (with regime + microstructure conviction)
+        # Calculate position size (with regime + microstructure conviction + loss streak)
+        loss_streak = self.manager.get_consecutive_losses() if self.manager else 0
         size_result = self.sizer.calculate_position_size(
             futures_balance, entry_price, stop_loss, confidence,
             min_trade_value=max(MIN_FUTURES_TRADE_VALUE, bybit_min_notional),
-            regime=regime, microstructure=microstructure
+            regime=regime, microstructure=microstructure, consecutive_losses=loss_streak,
+            take_profit=take_profit
         )
 
         if not size_result['valid']:
@@ -1139,11 +1166,13 @@ class OrderExecutor:
 
         logger.info(f"Futures balance: ${futures_balance:.2f} (min required: ${bybit_min_notional})")
 
-        # Calculate position size based on risk (regime + microstructure conviction)
+        # Calculate position size based on risk (regime + microstructure + loss streak)
+        loss_streak = self.manager.get_consecutive_losses() if self.manager else 0
         size_result = self.sizer.calculate_position_size(
             futures_balance, entry_price, stop_loss, confidence,
             min_trade_value=max(MIN_FUTURES_TRADE_VALUE, bybit_min_notional),
-            regime=regime, microstructure=microstructure
+            regime=regime, microstructure=microstructure, consecutive_losses=loss_streak,
+            take_profit=take_profit
         )
 
         if not size_result['valid']:

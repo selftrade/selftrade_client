@@ -17,20 +17,48 @@ class ExitReason(Enum):
     SIGNAL_REVERSAL = "signal_reversal"
 
 
+# Per-asset trailing stop percentages
+# BTC/ETH: tight noise (1-2% wicks), alts: medium (2-3%), meme: wide (3-5%)
+ASSET_TRAIL_PCT = {
+    'BTCUSDT': 1.5, 'ETHUSDT': 1.5, 'BNBUSDT': 1.8,
+    # Mid-cap alts: wider trail for bigger wicks
+    'XRPUSDT': 2.0, 'SOLUSDT': 2.0, 'ADAUSDT': 2.0, 'AVAXUSDT': 2.2,
+    'LINKUSDT': 2.0, 'LTCUSDT': 2.0, 'TRXUSDT': 2.0, 'DOTUSDT': 2.0,
+    'SUIUSDT': 2.5, 'NEARUSDT': 2.5, 'APTUSDT': 2.5, 'INJUSDT': 2.5,
+    'ARBUSDT': 2.5, 'OPUSDT': 2.5, 'FETUSDT': 2.5, 'RENDERUSDT': 2.5,
+    'WLDUSDT': 2.5,
+    # Meme coins: WIDE trail (3-5% wicks are normal)
+    'DOGEUSDT': 3.0, 'PEPEUSDT': 4.0, 'SHIBUSDT': 3.5,
+    'WIFUSDT': 4.0, 'BONKUSDT': 4.0, 'FLOKIUSDT': 4.0,
+}
+
+ASSET_ACTIVATION_PCT = {
+    'BTCUSDT': 3.0, 'ETHUSDT': 3.0,
+    'DOGEUSDT': 5.0, 'PEPEUSDT': 6.0, 'SHIBUSDT': 5.0,
+    'WIFUSDT': 6.0, 'BONKUSDT': 6.0, 'FLOKIUSDT': 6.0,
+}
+
+
 class TrailingStopConfig:
     """Configuration for trailing stop behavior"""
 
     def __init__(
         self,
         enabled: bool = True,
-        activation_pct: float = 3.5,      # Activate trailing after 3.5% profit (let it breathe)
-        trail_pct: float = 0.8,            # Trail 0.8% behind peak (wider to avoid noise)
-        breakeven_pct: float = 3.0,        # Move SL to breakeven after 3.0% profit (was 1.5% - fees ate profit)
-        breakeven_buffer_pct: float = 0.15  # Add 0.15% buffer above entry for breakeven
+        activation_pct: float = 3.5,
+        trail_pct: float = 1.5,
+        breakeven_pct: float = 3.0,
+        breakeven_buffer_pct: float = 0.15,
+        pair: str = None  # If set, uses per-asset trail settings
     ):
         self.enabled = enabled
-        self.activation_pct = activation_pct
-        self.trail_pct = trail_pct
+        # Use per-asset settings if pair is provided
+        if pair and pair.upper() in ASSET_TRAIL_PCT:
+            self.trail_pct = ASSET_TRAIL_PCT[pair.upper()]
+            self.activation_pct = ASSET_ACTIVATION_PCT.get(pair.upper(), activation_pct)
+        else:
+            self.trail_pct = trail_pct
+            self.activation_pct = activation_pct
         self.breakeven_pct = breakeven_pct
         self.breakeven_buffer_pct = breakeven_buffer_pct
 
@@ -399,21 +427,24 @@ class SLTPMonitor:
                     self._update_stop_loss(pair, new_sl, "breakeven")
                     self.breakeven_activated[pair] = True
 
-        # 2. Activate and update trailing stop
-        if profit_pct >= self.config.activation_pct:
+        # 2. Activate and update trailing stop (per-asset trail width)
+        # BTC 1.5%, mid-cap alts 2-2.5%, meme coins 3-4%
+        pair_upper = pair.upper().replace('/', '')
+        trail_pct = ASSET_TRAIL_PCT.get(pair_upper, self.config.trail_pct)
+        activation_pct = ASSET_ACTIVATION_PCT.get(pair_upper, self.config.activation_pct)
+
+        if profit_pct >= activation_pct:
             self.trailing_active[pair] = True
             peak = self.peak_prices.get(pair, current_price)
 
             if thesis in ['long', 'buy']:
-                # Trail below peak
-                trail_sl = peak * (1 - self.config.trail_pct / 100)
+                trail_sl = peak * (1 - trail_pct / 100)
                 if trail_sl > current_sl:
-                    self._update_stop_loss(pair, trail_sl, "trailing")
-            else:  # SHORT thesis
-                # Trail above trough (lowest point for short)
-                trail_sl = peak * (1 + self.config.trail_pct / 100)
+                    self._update_stop_loss(pair, trail_sl, f"trailing({trail_pct}%)")
+            else:
+                trail_sl = peak * (1 + trail_pct / 100)
                 if trail_sl < current_sl:
-                    self._update_stop_loss(pair, trail_sl, "trailing")
+                    self._update_stop_loss(pair, trail_sl, f"trailing({trail_pct}%)")
 
     def _update_stop_loss(self, pair: str, new_sl: float, reason: str):
         """Update stop loss in position manager (thread-safe)"""
