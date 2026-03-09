@@ -3015,7 +3015,7 @@ class MainWindow(QMainWindow):
             # Get trade history for win rate
             trade_history = self.position_manager.trade_history
             if trade_history and len(trade_history) >= 3:
-                wins = sum(1 for t in trade_history if t.get('realized_pnl', t.get('unrealized_pnl', 0)) > 0)
+                wins = sum(1 for t in trade_history if t.get('unrealized_pnl_net', t.get('unrealized_pnl', 0)) > 0)
                 total_trades = len(trade_history)
                 win_rate = (wins / total_trades) * 100 if total_trades > 0 else 0
                 self.win_rate_value.setText(f"{win_rate:.0f}%")

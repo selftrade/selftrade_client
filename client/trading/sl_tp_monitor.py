@@ -514,8 +514,8 @@ class SLTPMonitor:
             self._exit_failures[pair] = self._exit_failures.get(pair, 0) + 1
             failures = self._exit_failures[pair]
 
-            # Check for "insufficient funds" - means asset doesn't exist on exchange
-            if 'insufficient' in error_str or 'balance' in error_str:
+            # Check for "insufficient funds" / "oversold" - means asset doesn't exist on exchange
+            if 'insufficient' in error_str or 'balance' in error_str or 'oversold' in error_str:
                 logger.warning(f"Asset {pair} likely doesn't exist on exchange (attempt {failures}/{self._max_exit_failures})")
 
                 # Remove stale position after max failures

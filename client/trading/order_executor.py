@@ -873,10 +873,11 @@ class OrderExecutor:
                 'order': None
             }
 
-        # User has the asset - calculate how much to sell
-        available_amount = asset_info['amount']
-        available_usdt_value = asset_info['usdt_value']
+        # User has the asset - use FREE balance (not locked in orders)
+        free_amount = asset_info.get('free', asset_info['amount'])
+        available_amount = free_amount if free_amount > 0 else asset_info['amount']
         current_price = asset_info.get('price', entry_price)
+        available_usdt_value = available_amount * current_price
 
         # Sell 100% on exit signals — holding leftovers accumulates risk and fee drag
         sell_percent = 1.0
