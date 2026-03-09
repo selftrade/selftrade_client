@@ -55,18 +55,18 @@ jobs:
           BUILD_VERSION: ${{ steps.version.outputs.version }}
         run: |
           python -m nuitka `
+            --assume-yes-for-downloads `
             --standalone `
             --onefile `
             --output-filename=SelfTrade-Setup.exe `
             --output-dir=dist `
-            --windows-disable-console `
+            --windows-console-mode=disable `
             --company-name=SelfTrade `
             --product-name="SelfTrade Client" `
             --product-version=$env:BUILD_VERSION `
             --file-description="SelfTrade Desktop Trading Client" `
             --copyright="SelfTrade 2024-2026" `
             --enable-plugin=pyqt6 `
-            --enable-plugin=anti-bloat `
             --include-package=client `
             --include-package=client.ui `
             --include-package=client.services `
@@ -78,7 +78,6 @@ jobs:
             --include-package=requests `
             --include-package=qasync `
             --include-package=ujson `
-            --follow-imports `
             --nofollow-import-to=tkinter `
             --nofollow-import-to=unittest `
             --nofollow-import-to=test `
