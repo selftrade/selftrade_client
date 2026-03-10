@@ -3554,8 +3554,9 @@ class MainWindow(QMainWindow):
 
     def _sync_positions_from_exchange(self) -> int:
         """
-        Sync positions from exchange - CLEAR local cache and create fresh positions.
-        This is the source of truth - exchange holdings, not local JSON.
+        Sync positions from exchange - PRESERVES saved positions from positions.json.
+        Only creates new positions for untracked assets (orphans).
+        Removes saved positions that no longer exist on exchange (stale).
 
         Returns: Number of positions synced
         """
@@ -3565,12 +3566,13 @@ class MainWindow(QMainWindow):
         try:
             exchange_name = self.exchange_client.exchange_name
 
-            # STEP 1: Clear ALL local positions (fresh start)
-            old_count = self.position_manager.clear_all_positions()
-            if old_count > 0:
-                self._log(f"🗑️ Cleared {old_count} stale position(s) from cache")
+            # STEP 1: Load saved positions (already loaded in __init__, just reference them)
+            saved_positions = self.position_manager.get_all_positions()
+            saved_spot_pairs = {p for p in saved_positions if ':' not in p}  # Spot pairs (no ':')
+            self._log(f"📂 Loaded {len(saved_positions)} saved position(s) from cache")
 
             synced_count = 0
+            exchange_spot_pairs = set()  # Track what's actually on exchange
 
             # STEP 2: Get SPOT holdings from exchange
             self._log("📡 Fetching SPOT balances...")
@@ -3582,7 +3584,7 @@ class MainWindow(QMainWindow):
                 self._log(f"   ⚠️ Failed to fetch SPOT balances: {e}")
                 balances = {}
 
-            # STEP 3: Create LONG positions for each SPOT holding (except stablecoins)
+            # STEP 3: Match exchange holdings against saved positions
             if balances:
                 for currency, info in balances.items():
                     if currency in ['USDT', 'BUSD', 'USDC', 'TUSD', 'FDUSD', 'DAI']:
@@ -3596,28 +3598,54 @@ class MainWindow(QMainWindow):
                     if amount <= 0 or current_price <= 0:
                         continue
 
-                    # Create LONG position with current price as entry
-                    stop_loss = current_price * 0.98      # 2% below
-                    take_profit = current_price * 1.04    # 4% above
+                    exchange_spot_pairs.add(pair)
 
-                    self.position_manager.add_position(
-                        pair=pair,
-                        side='long',
-                        entry_price=current_price,
-                        quantity=amount,
-                        stop_loss=stop_loss,
-                        take_profit=take_profit,
-                        order_id=None,
-                        exchange=exchange_name,
-                        market='spot'
-                    )
+                    if self.position_manager.has_position(pair):
+                        # PRESERVED: Position exists in saved data - keep entry/SL/TP intact
+                        saved = self.position_manager.get_position(pair)
+                        old_qty = saved.get('quantity', 0)
 
-                    # Start monitoring for spot
+                        # Update quantity if it changed on exchange (partial fill, etc.)
+                        if old_qty > 0 and abs(amount - old_qty) / old_qty > 0.05:
+                            self.position_manager.positions[pair]['quantity'] = amount
+                            self.position_manager._save_positions()
+                            self._log(f"📊 [SPOT] {pair}: KEPT (qty updated {old_qty:.6f} → {amount:.6f}), "
+                                     f"entry=${saved['entry_price']:.2f}, SL=${saved['stop_loss']:.2f}, TP=${saved['take_profit']:.2f}")
+                        else:
+                            self._log(f"📊 [SPOT] {pair}: KEPT from saved data, "
+                                     f"entry=${saved['entry_price']:.2f}, SL=${saved['stop_loss']:.2f}, TP=${saved['take_profit']:.2f}")
+                    else:
+                        # NEW/ORPHAN: Asset on exchange but not in saved positions
+                        # Use current price as entry with default SL/TP
+                        stop_loss = current_price * 0.955     # 4.5% below
+                        take_profit = current_price * 1.1125  # 11.25% above (2.5:1 R:R)
+
+                        self.position_manager.add_position(
+                            pair=pair,
+                            side='long',
+                            entry_price=current_price,
+                            quantity=amount,
+                            stop_loss=stop_loss,
+                            take_profit=take_profit,
+                            order_id=None,
+                            exchange=exchange_name,
+                            market='spot'
+                        )
+
+                        self._log(f"📊 [SPOT] {pair}: NEW (orphan) {amount:.6f} @ ${current_price:.2f} (${usdt_value:.2f})")
+
+                    # Start monitoring
                     if self.sl_tp_monitor:
                         self.sl_tp_monitor.start_monitoring(pair)
 
                     synced_count += 1
-                    self._log(f"📊 [SPOT] {pair}: {amount:.6f} @ ${current_price:.2f} (${usdt_value:.2f})")
+
+            # STEP 3b: Remove saved SPOT positions that no longer exist on exchange
+            for stale_pair in saved_spot_pairs - exchange_spot_pairs:
+                self._log(f"🗑️ [SPOT] {stale_pair}: Removed (no longer on exchange)")
+                self.position_manager.remove_position(stale_pair)
+                if self.sl_tp_monitor:
+                    self.sl_tp_monitor.stop_monitoring(stale_pair)
 
             # STEP 4: Get FUTURES positions - try to sync even if not explicitly enabled
             # User may have existing futures positions that need to be tracked
@@ -3643,6 +3671,10 @@ class MainWindow(QMainWindow):
                         self._log(f"   ⚠️ Futures connection failed: {e}")
                 else:
                     futures_synced = True
+
+            # Track futures pairs on exchange for stale removal
+            saved_futures_pairs = {p for p in saved_positions if ':' in p}
+            exchange_futures_pairs = set()
 
             if futures_synced or self.exchange_client.futures_connected:
                 self._log("📡 Fetching FUTURES positions...")
@@ -3692,37 +3724,58 @@ class MainWindow(QMainWindow):
                                 logger.warning(f"Skipping futures position {pair}: amount={amount}, entry={entry_price}")
                                 continue
 
-                            current_price = mark_price if mark_price > 0 else entry_price
+                            exchange_futures_pairs.add(pair)
 
-                            # Calculate SL/TP based on side
-                            if pos_side in ['long', 'buy']:
-                                stop_loss = entry_price * 0.98      # 2% below for LONG
-                                take_profit = entry_price * 1.04    # 4% above for LONG
-                                sl_order_side = 'sell'  # Sell to close LONG
-                                tp_order_side = 'sell'
+                            # Check if we have a saved position for this futures pair
+                            if self.position_manager.has_position(pair):
+                                # PRESERVED: Keep saved SL/TP, just update quantity/entry if changed
+                                saved = self.position_manager.get_position(pair)
+                                stop_loss = saved['stop_loss']
+                                take_profit = saved['take_profit']
+
+                                # Update quantity if different
+                                old_qty = saved.get('quantity', 0)
+                                if old_qty > 0 and abs(amount - old_qty) / old_qty > 0.05:
+                                    self.position_manager.positions[pair]['quantity'] = amount
+                                    self.position_manager._save_positions()
+
+                                self._log(f"📊 [FUTURES] {pair} {pos_side.upper()}: KEPT from saved data, "
+                                         f"entry=${saved['entry_price']:.2f}, SL=${stop_loss:.2f}, TP=${take_profit:.2f}")
                             else:
-                                stop_loss = entry_price * 1.02      # 2% above for SHORT
-                                take_profit = entry_price * 0.96    # 4% below for SHORT
-                                sl_order_side = 'buy'   # Buy to close SHORT
-                                tp_order_side = 'buy'
+                                # NEW: Futures position not in saved data - create with defaults
+                                current_price = mark_price if mark_price > 0 else entry_price
 
-                            # Add position to tracker
-                            self.position_manager.add_position(
-                                pair=pair,
-                                side=pos_side,
-                                entry_price=entry_price,
-                                quantity=amount,
-                                stop_loss=stop_loss,
-                                take_profit=take_profit,
-                                order_id=None,
-                                exchange=exchange_name,
-                                market='futures'
-                            )
+                                if pos_side in ['long', 'buy']:
+                                    stop_loss = entry_price * 0.955     # 4.5% below for LONG
+                                    take_profit = entry_price * 1.1125  # 11.25% above (2.5:1 R:R)
+                                else:
+                                    stop_loss = entry_price * 1.045     # 4.5% above for SHORT
+                                    take_profit = entry_price * 0.8875  # 11.25% below (2.5:1 R:R)
+
+                                self.position_manager.add_position(
+                                    pair=pair,
+                                    side=pos_side,
+                                    entry_price=entry_price,
+                                    quantity=amount,
+                                    stop_loss=stop_loss,
+                                    take_profit=take_profit,
+                                    order_id=None,
+                                    exchange=exchange_name,
+                                    market='futures'
+                                )
+
+                                self._log(f"📊 [FUTURES] {pair} {pos_side.upper()}: NEW {amount:.6f} @ ${entry_price:.2f}")
 
                             synced_count += 1
-                            self._log(f"📊 [FUTURES] {pair} {pos_side.upper()}: {amount:.6f} @ ${entry_price:.2f}")
 
-                            # STEP 5: Place SL/TP orders on futures exchange
+                            # STEP 5: Place SL/TP orders on futures exchange using current SL/TP
+                            # (whether saved or freshly created)
+                            pos_data = self.position_manager.get_position(pair)
+                            stop_loss = pos_data['stop_loss']
+                            take_profit = pos_data['take_profit']
+                            sl_order_side = 'sell' if pos_side in ['long', 'buy'] else 'buy'
+                            tp_order_side = sl_order_side
+
                             sl_order_id = None
                             tp_order_id = None
 
@@ -3754,6 +3807,13 @@ class MainWindow(QMainWindow):
                     logger.error(f"Failed to sync futures positions: {e}")
                     self._log(f"⚠️ Futures sync failed: {e}")
 
+            # Remove saved FUTURES positions that no longer exist on exchange
+            for stale_pair in saved_futures_pairs - exchange_futures_pairs:
+                self._log(f"🗑️ [FUTURES] {stale_pair}: Removed (no longer on exchange)")
+                self.position_manager.remove_position(stale_pair)
+                if self.sl_tp_monitor:
+                    self.sl_tp_monitor.stop_monitoring(stale_pair)
+
             if synced_count > 0:
                 self._log(f"✅ Synced {synced_count} position(s) from {exchange_name.upper()}")
             else:
@@ -3778,10 +3838,11 @@ class MainWindow(QMainWindow):
 
         reply = QMessageBox.question(self, "Re-sync Positions",
             "This will:\n"
-            "• Clear all locally tracked positions\n"
-            "• Fetch current holdings from exchange\n"
-            "• Create fresh positions with current prices\n\n"
-            "SL/TP will be reset to defaults (2% SL, 4% TP).\n\n"
+            "• Verify saved positions still exist on exchange\n"
+            "• Keep saved entry/SL/TP for existing positions\n"
+            "• Import any new untracked holdings as orphans\n"
+            "• Remove positions no longer on exchange\n\n"
+            "Your saved SL/TP levels will be preserved.\n\n"
             "Continue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
 

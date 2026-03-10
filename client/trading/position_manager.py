@@ -361,16 +361,19 @@ class PositionManager:
                 continue
 
             # Fix positions based on THESIS direction (not holding side)
+            # NOTE: SL can legitimately be above entry for LONG (breakeven/trailing stop)
+            # or below entry for SHORT (breakeven/trailing stop). Only fix truly broken values.
             if thesis in ['long', 'buy']:
-                # For LONG thesis: SL must be below thesis_entry
-                if stop_loss >= thesis_entry:
+                # For LONG thesis: SL above entry is OK (breakeven/trailing moved it)
+                # Only fix if SL is ABOVE take_profit (clearly broken)
+                if stop_loss > 0 and take_profit > 0 and stop_loss >= take_profit:
                     old_sl = stop_loss
-                    position['stop_loss'] = thesis_entry * 0.955  # 4.5% below (matches server MIN_SL_PERCENT)
-                    logger.warning(f"FIXED {pair} LONG thesis SL: ${old_sl:.4f} -> ${position['stop_loss']:.4f}")
+                    position['stop_loss'] = thesis_entry * 0.955  # 4.5% below
+                    logger.warning(f"FIXED {pair} LONG thesis SL (was above TP): ${old_sl:.4f} -> ${position['stop_loss']:.4f}")
                     fixed_count += 1
 
                 # For LONG thesis: TP must be above thesis_entry
-                if take_profit <= thesis_entry:
+                if take_profit > 0 and take_profit <= thesis_entry:
                     old_tp = take_profit
                     position['take_profit'] = thesis_entry * 1.1125  # 11.25% above (2.5:1 R:R with 4.5% SL)
                     logger.warning(f"FIXED {pair} LONG thesis TP: ${old_tp:.4f} -> ${position['take_profit']:.4f}")
@@ -378,15 +381,16 @@ class PositionManager:
 
             # Fix SHORT thesis positions
             elif thesis in ['short', 'sell']:
-                # For SHORT thesis: SL must be above thesis_entry
-                if stop_loss <= thesis_entry:
+                # For SHORT thesis: SL below entry is OK (breakeven/trailing moved it)
+                # Only fix if SL is BELOW take_profit (clearly broken)
+                if stop_loss > 0 and take_profit > 0 and stop_loss <= take_profit:
                     old_sl = stop_loss
-                    position['stop_loss'] = thesis_entry * 1.045  # 4.5% above (matches server MIN_SL_PERCENT)
-                    logger.warning(f"FIXED {pair} SHORT thesis SL: ${old_sl:.4f} -> ${position['stop_loss']:.4f}")
+                    position['stop_loss'] = thesis_entry * 1.045  # 4.5% above
+                    logger.warning(f"FIXED {pair} SHORT thesis SL (was below TP): ${old_sl:.4f} -> ${position['stop_loss']:.4f}")
                     fixed_count += 1
 
                 # For SHORT thesis: TP must be below thesis_entry
-                if take_profit >= thesis_entry:
+                if take_profit > 0 and take_profit >= thesis_entry:
                     old_tp = take_profit
                     position['take_profit'] = thesis_entry * 0.8875  # 11.25% below (2.5:1 R:R with 4.5% SL)
                     logger.warning(f"FIXED {pair} SHORT thesis TP: ${old_tp:.4f} -> ${position['take_profit']:.4f}")

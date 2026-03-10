@@ -47,8 +47,8 @@ class TrailingStopConfig:
         enabled: bool = True,
         activation_pct: float = 3.5,
         trail_pct: float = 1.5,
-        breakeven_pct: float = 3.0,
-        breakeven_buffer_pct: float = 0.15,
+        breakeven_pct: float = 4.0,
+        breakeven_buffer_pct: float = 1.0,
         pair: str = None  # If set, uses per-asset trail settings
     ):
         self.enabled = enabled
