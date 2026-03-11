@@ -267,12 +267,38 @@ class OrderExecutor:
             if current_positions >= max_positions:
                 # Check if this is an existing position (update allowed)
                 if not self.manager.get_position(pair):
-                    return {
-                        'success': False,
-                        'reason': f"Position limit reached ({current_positions}/{max_positions}) - close existing positions first",
-                        'order': None,
-                        'position_limit': True
-                    }
+                    # HIGH-CONFIDENCE RECYCLING: sell weakest position to make room
+                    if confidence >= 0.80:
+                        weak_pair = self.manager.find_weakest_position(exclude_pairs=[pair])
+                        if weak_pair:
+                            logger.info(
+                                f"POSITION RECYCLE: {confidence:.0%} signal for {pair} — "
+                                f"recycling {weak_pair} to make room"
+                            )
+                            if self._recycle_position(weak_pair):
+                                logger.info(f"Recycled {weak_pair}, proceeding with {pair}")
+                                # Fall through to execute the new signal
+                            else:
+                                return {
+                                    'success': False,
+                                    'reason': f"Position limit ({current_positions}/{max_positions}) — tried to recycle {weak_pair} but failed",
+                                    'order': None,
+                                    'position_limit': True
+                                }
+                        else:
+                            return {
+                                'success': False,
+                                'reason': f"Position limit reached ({current_positions}/{max_positions}) — no recyclable positions found",
+                                'order': None,
+                                'position_limit': True
+                            }
+                    else:
+                        return {
+                            'success': False,
+                            'reason': f"Position limit reached ({current_positions}/{max_positions}) — need 80%+ confidence to recycle (got {confidence:.0%})",
+                            'order': None,
+                            'position_limit': True
+                        }
             # Reserve last 2 slots for high-confidence (80%+) signals only
             elif current_positions >= max_positions - 2:
                 if not self.manager.get_position(pair) and confidence < 0.80:
@@ -611,6 +637,28 @@ class OrderExecutor:
 
                     return self._execute_futures_short(pair, entry_price, stop_loss, take_profit, confidence, dry_run, regime, microstructure)
 
+                # SPOT: If we have a tracked LONG position for this asset, treat SHORT as close/sell
+                if self.manager.has_position(pair):
+                    existing = self.manager.get_position(pair)
+                    if existing and existing.get('side', '').lower() in ['long', 'buy']:
+                        logger.info(f"SHORT signal for owned {pair} — closing LONG position (selling asset)")
+                        self.manager.remove_position(pair)
+
+                        # Cancel any TP order
+                        if self.monitor and pair in getattr(self.monitor, 'tp_order_ids', {}):
+                            try:
+                                self.exchange.cancel_order(self.monitor.tp_order_ids[pair], pair)
+                            except Exception:
+                                pass
+
+                        sell_result = self._execute_sell(pair, entry_price, stop_loss, take_profit, confidence, dry_run, regime)
+                        if sell_result.get('success'):
+                            sell_result['action'] = 'short_closed_long'
+                            sell_result['message'] = f"SHORT signal closed LONG {pair}"
+                            if self.monitor:
+                                self.monitor.stop_monitoring(pair)
+                        return sell_result
+
                 # SPOT FALLBACK - Don't try to sell if we don't have the asset
                 asset_info = self.exchange.has_asset_balance(pair, min_value_usdt=MIN_TRADE_VALUE_USDT)
                 if not asset_info.get('has_balance'):
@@ -841,6 +889,59 @@ class OrderExecutor:
             'tp_order_id': tp_order_id,
             'monitoring': self.monitor is not None
         }
+
+    def _recycle_position(self, pair: str) -> bool:
+        """Sell a position to make room for a higher-confidence signal.
+        Returns True if position was successfully closed."""
+        position = self.manager.get_position(pair)
+        if not position:
+            return False
+
+        try:
+            quantity = position['quantity']
+            is_orphan = position.get('is_orphan', False)
+            pnl_pct = position.get('unrealized_pnl_pct', 0)
+
+            logger.info(
+                f"RECYCLING {pair}: selling to make room "
+                f"(orphan={is_orphan}, pnl={pnl_pct:.2f}%)"
+            )
+
+            # Cancel any TP order on exchange first
+            if self.monitor and pair in getattr(self.monitor, 'tp_order_ids', {}):
+                try:
+                    self.exchange.cancel_order(self.monitor.tp_order_ids[pair], pair)
+                    logger.info(f"Cancelled TP order for recycled {pair}")
+                except Exception as e:
+                    logger.warning(f"Failed to cancel TP order for {pair}: {e}")
+
+            # Place market sell order
+            order = self.exchange.place_market_order(pair, 'sell', quantity)
+            fill_price = float(order.get('average') or order.get('price') or 0)
+
+            # Update final PnL
+            if fill_price > 0:
+                self.manager.update_unrealized_pnl(pair, fill_price)
+
+            # Remove position and stop monitoring
+            self.manager.remove_position(pair)
+            if self.monitor:
+                self.monitor.stop_monitoring(pair)
+
+            logger.info(f"RECYCLED {pair} @ ${fill_price:.4f} (freed 1 position slot)")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to recycle {pair}: {e}")
+            # If sell fails with insufficient balance, just remove the stale position
+            error_str = str(e).lower()
+            if 'insufficient' in error_str or 'balance' in error_str:
+                logger.warning(f"Removing stale position {pair} (no asset on exchange)")
+                self.manager.remove_position(pair)
+                if self.monitor:
+                    self.monitor.stop_monitoring(pair)
+                return True
+            return False
 
     def _execute_sell(self, pair: str, entry_price: float, stop_loss: float,
                       take_profit: float, confidence: float, dry_run: bool,
