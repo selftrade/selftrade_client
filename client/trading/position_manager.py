@@ -428,6 +428,67 @@ class PositionManager:
         """Remove positions from other exchanges"""
         return self.fix_all_positions(exchange=exchange)
 
+    # ===================== POSITION RECYCLING =====================
+
+    def find_weakest_position(self, exclude_pairs: list = None) -> Optional[str]:
+        """Find the weakest position to recycle when limit is reached.
+
+        Priority order (recycle first):
+        1. Orphan positions (is_orphan=True) - no real entry data, no SL/TP monitoring
+        2. Positions with worst unrealized PnL %
+        3. Oldest positions (by entry_time)
+
+        Returns pair name of weakest position, or None.
+        """
+        with self._lock:
+            if not self.positions:
+                return None
+
+            exclude = set(p.upper() for p in (exclude_pairs or []))
+            candidates = []
+
+            for pair, pos in self.positions.items():
+                if pair in exclude:
+                    continue
+
+                is_orphan = pos.get('is_orphan', False)
+                pnl_pct = pos.get('unrealized_pnl_pct', 0)
+
+                # Parse entry_time for age scoring
+                try:
+                    entry_time = datetime.fromisoformat(pos.get('entry_time', ''))
+                    age_hours = (datetime.utcnow() - entry_time).total_seconds() / 3600
+                except (ValueError, TypeError):
+                    age_hours = 999  # Unknown age = old = recycle candidate
+
+                # Score: lower = weaker = recycle first
+                # Orphans get -1000 penalty (always recycled first)
+                # Then sort by PnL % (worst first), then by age (oldest first)
+                score = 0
+                if is_orphan:
+                    score -= 1000
+                score += pnl_pct * 10  # PnL weight (negative PnL = lower score)
+                score -= age_hours * 0.1  # Older = slightly lower score
+
+                candidates.append((pair, score, is_orphan, pnl_pct, age_hours))
+
+            if not candidates:
+                return None
+
+            # Sort by score ascending (weakest first)
+            candidates.sort(key=lambda x: x[1])
+
+            weakest = candidates[0]
+            logger.info(
+                f"Weakest position: {weakest[0]} (score={weakest[1]:.1f}, "
+                f"orphan={weakest[2]}, pnl={weakest[3]:.2f}%, age={weakest[4]:.1f}h)"
+            )
+            return weakest[0]
+
+    def is_orphan_position(self, pair: str) -> bool:
+        """Check if a position was imported as an orphan."""
+        return self.positions.get(pair.upper(), {}).get('is_orphan', False)
+
     # ===================== CIRCUIT BREAKER METHODS =====================
 
     def check_circuit_breaker(self, starting_balance: float) -> Dict[str, Any]:
@@ -696,6 +757,11 @@ class PositionManager:
                     market='spot'
                 )
 
+                # Flag as orphan — these have no real entry data and are recycled first
+                self.positions[pair.upper()]['is_orphan'] = True
+                self.positions[pair.upper()]['orphan_import_time'] = datetime.utcnow().isoformat()
+                self._save_positions()
+
                 imported.append({
                     'pair': pair,
                     'amount': amount,
@@ -705,8 +771,8 @@ class PositionManager:
                     'take_profit': take_profit
                 })
 
-                logger.info(f"📥 Imported orphan: {pair} {amount:.6f} @ ${price:.4f} "
-                           f"(SL: ${stop_loss:.4f}, TP: ${take_profit:.4f})")
+                logger.info(f"Imported orphan: {pair} {amount:.6f} @ ${price:.4f} "
+                           f"(SL: ${stop_loss:.4f}, TP: ${take_profit:.4f}, orphan=True)")
 
         except Exception as e:
             logger.error(f"Error importing orphaned positions: {e}")
