@@ -637,28 +637,6 @@ class OrderExecutor:
 
                     return self._execute_futures_short(pair, entry_price, stop_loss, take_profit, confidence, dry_run, regime, microstructure)
 
-                # SPOT: If we have a tracked LONG position for this asset, treat SHORT as close/sell
-                if self.manager.has_position(pair):
-                    existing = self.manager.get_position(pair)
-                    if existing and existing.get('side', '').lower() in ['long', 'buy']:
-                        logger.info(f"SHORT signal for owned {pair} — closing LONG position (selling asset)")
-                        self.manager.remove_position(pair)
-
-                        # Cancel any TP order
-                        if self.monitor and pair in getattr(self.monitor, 'tp_order_ids', {}):
-                            try:
-                                self.exchange.cancel_order(self.monitor.tp_order_ids[pair], pair)
-                            except Exception:
-                                pass
-
-                        sell_result = self._execute_sell(pair, entry_price, stop_loss, take_profit, confidence, dry_run, regime)
-                        if sell_result.get('success'):
-                            sell_result['action'] = 'short_closed_long'
-                            sell_result['message'] = f"SHORT signal closed LONG {pair}"
-                            if self.monitor:
-                                self.monitor.stop_monitoring(pair)
-                        return sell_result
-
                 # SPOT FALLBACK - Don't try to sell if we don't have the asset
                 asset_info = self.exchange.has_asset_balance(pair, min_value_usdt=MIN_TRADE_VALUE_USDT)
                 if not asset_info.get('has_balance'):
