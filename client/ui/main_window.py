@@ -25,6 +25,7 @@ from client.config import (
 )
 from client.services import ServerClient, ExchangeClient, WebSocketClient
 from client.services.server_client import SubscriptionExpiredError
+from client.utils.precision import fmt_price
 from client.trading import (
     OrderExecutor, PositionSizer, PositionManager, SignalHandler,
     SLTPMonitor, TrailingStopConfig, ExitReason
@@ -2250,7 +2251,7 @@ class MainWindow(QMainWindow):
             adx = indicators.get('adx', 0)
             volume_ratio = indicators.get('volume_ratio', 0)
 
-            self.entry_label.setText(f"💰 Price: ${current_price:,.2f}" if current_price else "📍 Entry: --")
+            self.entry_label.setText(f"💰 Price: {fmt_price(current_price)}" if current_price else "📍 Entry: --")
             self.sl_label.setText(f"📊 RSI: {rsi:.0f} | ADX: {adx:.0f}" if rsi else "🛑 Stop Loss: --")
             self.tp_label.setText(f"📈 Trend: {trend.upper()}" if trend else "🎯 Take Profit: --")
 
@@ -2415,7 +2416,7 @@ class MainWindow(QMainWindow):
                 if action == 'flipped':
                     # Position flip - NO FEE
                     self._log(f"🔄 FLIPPED {result.get('pair')} to {result.get('side', '').upper()} "
-                             f"(NO FEE!) SL: ${result.get('stop_loss', 0):.2f} | TP: ${result.get('take_profit', 0):.2f}")
+                             f"(NO FEE!) SL: {fmt_price(result.get('stop_loss', 0))} | TP: {fmt_price(result.get('take_profit', 0))}")
                     self._update_positions()
                 elif action == 'updated':
                     # SL/TP updated
@@ -2428,7 +2429,7 @@ class MainWindow(QMainWindow):
                 else:
                     # Normal order execution
                     self._log(f"✅ Order executed: {result.get('pair')} {result.get('side')} "
-                             f"qty={result.get('quantity', 0):.6f} @ ${result.get('fill_price', 0):.2f}")
+                             f"qty={result.get('quantity', 0):.6f} @ {fmt_price(result.get('fill_price', 0))}")
                     self._update_positions()
                     self._schedule_balance_update()
 
@@ -3401,7 +3402,7 @@ class MainWindow(QMainWindow):
                     reason = exit_info['reason']
                     emoji = "🛑" if reason == ExitReason.STOP_LOSS else "🎯" if reason == ExitReason.TAKE_PROFIT else "📈"
                     self._log(f"{emoji} {exit_info['pair']} closed by {reason.value}: "
-                             f"P&L ${result.get('pnl', 0):.2f}")
+                             f"P&L ${result.get('pnl', 0):.4f}")
                     self._update_positions()
                     self._refresh_portfolio()
 
@@ -3415,7 +3416,7 @@ class MainWindow(QMainWindow):
 
         # Use thread-safe signal for logging (callback may be from background thread)
         if reason == ExitReason.STOP_LOSS:
-            self.log_signal.emit(f"🛑 STOP LOSS: {pair} closed @ ${fill_price:.2f}, P&L: ${pnl:.2f}")
+            self.log_signal.emit(f"🛑 STOP LOSS: {pair} closed @ {fmt_price(fill_price)}, P&L: ${pnl:.4f}")
             # Record cooldown to prevent re-entering same losing trade (BOTH layers)
             self._sl_cooldown[pair] = time.time()
             if self.order_executor:
@@ -3433,18 +3434,18 @@ class MainWindow(QMainWindow):
                 self.log_signal.emit(f"🚨 Use 'Resume Trading' button to continue after investigating.")
 
         elif reason == ExitReason.TAKE_PROFIT:
-            self.log_signal.emit(f"🎯 TAKE PROFIT: {pair} closed @ ${fill_price:.2f}, P&L: ${pnl:.2f}")
+            self.log_signal.emit(f"🎯 TAKE PROFIT: {pair} closed @ {fmt_price(fill_price)}, P&L: ${pnl:.4f}")
             # Reset consecutive losses on profitable trade
             self._consecutive_losses = 0
 
         elif reason == ExitReason.TRAILING_STOP:
-            self.log_signal.emit(f"📈 TRAILING STOP: {pair} locked profit @ ${fill_price:.2f}, P&L: ${pnl:.2f}")
+            self.log_signal.emit(f"📈 TRAILING STOP: {pair} locked profit @ {fmt_price(fill_price)}, P&L: ${pnl:.4f}")
             # Trailing stop usually locks profit - reset losses
             if pnl >= 0:
                 self._consecutive_losses = 0
 
         elif reason == ExitReason.BREAKEVEN_STOP:
-            self.log_signal.emit(f"⚖️ BREAKEVEN: {pair} closed @ ${fill_price:.2f}, P&L: ${pnl:.2f}")
+            self.log_signal.emit(f"⚖️ BREAKEVEN: {pair} closed @ {fmt_price(fill_price)}, P&L: ${pnl:.4f}")
             # Breakeven is not a loss - reset
             self._consecutive_losses = 0
 
@@ -3456,9 +3457,9 @@ class MainWindow(QMainWindow):
         """Callback when trailing stop updates the SL - THREAD SAFE"""
         # Use thread-safe signal for logging (callback may be from background thread)
         if reason == "breakeven":
-            self.log_signal.emit(f"⚖️ {pair} SL moved to breakeven: ${new_sl:.2f}")
+            self.log_signal.emit(f"⚖️ {pair} SL moved to breakeven: {fmt_price(new_sl)}")
         elif reason == "trailing":
-            self.log_signal.emit(f"📈 {pair} trailing SL updated: ${new_sl:.2f}")
+            self.log_signal.emit(f"📈 {pair} trailing SL updated: {fmt_price(new_sl)}")
         # Schedule UI update on main thread
         QTimer.singleShot(0, self._update_positions)
 
@@ -3524,10 +3525,10 @@ class MainWindow(QMainWindow):
             flip_indicator = f" (↔{flip_count})" if flip_count > 0 else ""
             lines.append(f"{emoji} {pair} {thesis}{flip_indicator}")
             lines.append(f"   Qty: {pos['quantity']:.6f}")
-            lines.append(f"   Entry: ${thesis_entry:,.2f}")
-            lines.append(f"   Current: ${current:,.2f}")
-            lines.append(f"   SL: ${pos.get('stop_loss', 0):,.2f}")
-            lines.append(f"   TP: ${pos.get('take_profit', 0):,.2f}")
+            lines.append(f"   Entry: {fmt_price(thesis_entry)}")
+            lines.append(f"   Current: {fmt_price(current)}")
+            lines.append(f"   SL: {fmt_price(pos.get('stop_loss', 0))}")
+            lines.append(f"   TP: {fmt_price(pos.get('take_profit', 0))}")
             lines.append(f"   {pnl_emoji} Net P&L: ${pnl_net:,.2f} ({pnl_pct_net:+.2f}%)")
             if fees > 0:
                 lines.append(f"   💸 Fees: ${fees:,.4f}")
@@ -3546,7 +3547,7 @@ class MainWindow(QMainWindow):
                     if trail_info:
                         lines.append(f"   Status: {' | '.join(trail_info)}")
                     if status.get('peak_price'):
-                        lines.append(f"   Peak: ${status['peak_price']:,.2f}")
+                        lines.append(f"   Peak: {fmt_price(status['peak_price'])}")
 
             lines.append("─" * 35)
 
@@ -3610,10 +3611,10 @@ class MainWindow(QMainWindow):
                             self.position_manager.positions[pair]['quantity'] = amount
                             self.position_manager._save_positions()
                             self._log(f"📊 [SPOT] {pair}: KEPT (qty updated {old_qty:.6f} → {amount:.6f}), "
-                                     f"entry=${saved['entry_price']:.2f}, SL=${saved['stop_loss']:.2f}, TP=${saved['take_profit']:.2f}")
+                                     f"entry={fmt_price(saved['entry_price'])}, SL={fmt_price(saved['stop_loss'])}, TP={fmt_price(saved['take_profit'])}")
                         else:
                             self._log(f"📊 [SPOT] {pair}: KEPT from saved data, "
-                                     f"entry=${saved['entry_price']:.2f}, SL=${saved['stop_loss']:.2f}, TP=${saved['take_profit']:.2f}")
+                                     f"entry={fmt_price(saved['entry_price'])}, SL={fmt_price(saved['stop_loss'])}, TP={fmt_price(saved['take_profit'])}")
                     else:
                         # NEW/ORPHAN: Asset on exchange but not in saved positions
                         # Use current price as entry with default SL/TP
@@ -3632,7 +3633,7 @@ class MainWindow(QMainWindow):
                             market='spot'
                         )
 
-                        self._log(f"📊 [SPOT] {pair}: NEW (orphan) {amount:.6f} @ ${current_price:.2f} (${usdt_value:.2f})")
+                        self._log(f"📊 [SPOT] {pair}: NEW (orphan) {amount:.6f} @ {fmt_price(current_price)} (${usdt_value:.2f})")
 
                     # Start monitoring
                     if self.sl_tp_monitor:
@@ -3740,7 +3741,7 @@ class MainWindow(QMainWindow):
                                     self.position_manager._save_positions()
 
                                 self._log(f"📊 [FUTURES] {pair} {pos_side.upper()}: KEPT from saved data, "
-                                         f"entry=${saved['entry_price']:.2f}, SL=${stop_loss:.2f}, TP=${take_profit:.2f}")
+                                         f"entry={fmt_price(saved['entry_price'])}, SL={fmt_price(stop_loss)}, TP={fmt_price(take_profit)}")
                             else:
                                 # NEW: Futures position not in saved data - create with defaults
                                 current_price = mark_price if mark_price > 0 else entry_price
@@ -3764,7 +3765,7 @@ class MainWindow(QMainWindow):
                                     market='futures'
                                 )
 
-                                self._log(f"📊 [FUTURES] {pair} {pos_side.upper()}: NEW {amount:.6f} @ ${entry_price:.2f}")
+                                self._log(f"📊 [FUTURES] {pair} {pos_side.upper()}: NEW {amount:.6f} @ {fmt_price(entry_price)}")
 
                             synced_count += 1
 

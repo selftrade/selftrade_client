@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional, TYPE_CHECKING
 from client.services.exchange_client import ExchangeClient
 from client.trading.position_sizer import PositionSizer
 from client.trading.position_manager import PositionManager
+from client.utils.precision import fmt_price
 from client.config import (
     MIN_TRADE_VALUE_USDT, MIN_FUTURES_TRADE_VALUE, is_pair_supported, get_exchange_symbol,
     PREFER_FUTURES, MIN_CONFIDENCE_FOR_SPOT, get_max_positions
@@ -834,7 +835,7 @@ class OrderExecutor:
             exchange=self.exchange.exchange_name
         )
 
-        logger.info(f"BUY order executed: {pair} {quantity:.6f} @ ${fill_price:.2f} | SL: ${stop_loss:.4f} | TP: ${take_profit:.4f}")
+        logger.info(f"BUY order executed: {pair} {quantity:.6f} @ {fmt_price(fill_price)} | SL: {fmt_price(stop_loss)} | TP: {fmt_price(take_profit)}")
 
         # === HYBRID SL/TP SETUP ===
         tp_order_id = None

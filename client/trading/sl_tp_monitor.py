@@ -4,6 +4,8 @@ from typing import Dict, Any, Optional, Callable
 from datetime import datetime
 from enum import Enum
 
+from client.utils.precision import fmt_price
+
 logger = logging.getLogger(__name__)
 
 
@@ -124,8 +126,8 @@ class SLTPMonitor:
         if tp_order_id:
             self.tp_order_ids[pair] = tp_order_id
 
-        logger.info(f"Started monitoring {pair} ({thesis.upper()}) - Entry: ${thesis_entry:.2f}, "
-                   f"SL: ${position['stop_loss']:.2f}, TP: ${position['take_profit']:.2f}")
+        logger.info(f"Started monitoring {pair} ({thesis.upper()}) - Entry: {fmt_price(thesis_entry)}, "
+                   f"SL: {fmt_price(position['stop_loss'])}, TP: {fmt_price(position['take_profit'])}")
 
     def stop_monitoring(self, pair: str):
         """Stop monitoring a position"""
@@ -191,7 +193,7 @@ class SLTPMonitor:
                     self.manager.update_unrealized_pnl(pair, take_profit)
                     final_pnl = position.get('unrealized_pnl_net', 0)
 
-                    logger.info(f"🎯 {pair} TP order filled on exchange @ ${take_profit:.2f}, P&L: ${final_pnl:.2f}")
+                    logger.info(f"🎯 {pair} TP order filled on exchange @ {fmt_price(take_profit)}, P&L: ${final_pnl:.4f}")
 
                     # Callback for UI update
                     if self.on_exit:
@@ -225,7 +227,7 @@ class SLTPMonitor:
                             take_profit = position.get('take_profit', 0)
                             self.manager.update_unrealized_pnl(pair, take_profit)
                             final_pnl = position.get('unrealized_pnl_net', 0)
-                            logger.info(f"🎯 {pair} FUTURES position closed - assuming TP filled @ ${take_profit:.2f}")
+                            logger.info(f"🎯 {pair} FUTURES position closed - assuming TP filled @ {fmt_price(take_profit)}")
 
                             if self.on_exit:
                                 self.on_exit(pair, ExitReason.TAKE_PROFIT, {
@@ -246,7 +248,7 @@ class SLTPMonitor:
                                    f"total={asset_info.get('amount', 0):.6f}, "
                                    f"free={asset_info.get('free', 0):.6f}, "
                                    f"used={asset_info.get('used', 0):.6f}, "
-                                   f"value=${asset_info.get('usdt_value', 0):.2f}")
+                                   f"value=${asset_info.get('usdt_value', 0):.4f}")
 
                         if asset_info.get('has_balance'):
                             # Asset still exists (either free or locked in orders)
@@ -260,20 +262,30 @@ class SLTPMonitor:
                                 try:
                                     open_orders = self.exchange.get_open_orders(pair)
                                     if open_orders:
-                                        logger.info(f"📋 {pair} has {len(open_orders)} open order(s) - position still active")
-                                        # Maybe TP was replaced with another order, clear our tracking
-                                        del self.tp_order_ids[pair]
+                                        logger.info(f"📋 {pair} has {len(open_orders)} open order(s) - tracking first as TP")
+                                        # Track the existing open order as our TP
+                                        self.tp_order_ids[pair] = open_orders[0].get('id', '')
                                     else:
-                                        logger.warning(f"⚠️ {pair} no open orders found but used balance exists - exchange state unclear")
+                                        # Used balance but no open orders — re-place TP
+                                        logger.warning(f"⚠️ {pair} no open orders but used balance — re-placing TP")
                                         del self.tp_order_ids[pair]
+                                        new_tp_id = self.place_tp_order_on_exchange(pair)
+                                        if new_tp_id:
+                                            logger.info(f"✅ {pair} TP order re-placed: {new_tp_id}")
                                 except Exception as e:
                                     logger.warning(f"Could not check open orders: {e}")
-                                    del self.tp_order_ids[pair]
+                                    # Don't delete — keep tracking to avoid falling back to bad market sells
                             else:
                                 # Asset is free (not locked) - order was cancelled, NOT filled
-                                logger.warning(f"⚠️ {pair} TP order missing but asset still FREE on exchange! "
-                                             f"Balance: {free:.6f} - continuing to monitor")
+                                # RE-PLACE the TP order instead of falling back to local monitoring
+                                # (local monitoring uses market sell which gets bad fills on low-liquidity coins)
+                                logger.warning(f"⚠️ {pair} TP order cancelled by exchange — re-placing TP limit order")
                                 del self.tp_order_ids[pair]
+                                new_tp_id = self.place_tp_order_on_exchange(pair)
+                                if new_tp_id:
+                                    logger.info(f"✅ {pair} TP order re-placed: {new_tp_id}")
+                                else:
+                                    logger.warning(f"⚠️ {pair} failed to re-place TP order — will monitor locally")
 
                             # DON'T remove position - continue monitoring
                         else:
@@ -282,7 +294,7 @@ class SLTPMonitor:
                             take_profit = position.get('take_profit', 0)
                             self.manager.update_unrealized_pnl(pair, take_profit)
                             final_pnl = position.get('unrealized_pnl_net', 0)
-                            logger.info(f"🎯 {pair} SPOT TP order gone and NO asset on exchange (free=0, used=0) - assuming filled @ ${take_profit:.2f}")
+                            logger.info(f"🎯 {pair} SPOT TP order gone and NO asset on exchange (free=0, used=0) - assuming filled @ {fmt_price(take_profit)}")
 
                             if self.on_exit:
                                 self.on_exit(pair, ExitReason.TAKE_PROFIT, {
@@ -327,11 +339,11 @@ class SLTPMonitor:
         if thesis in ['long', 'buy']:
             if current_price > self.peak_prices[pair]:
                 self.peak_prices[pair] = current_price
-                logger.debug(f"{pair} new peak: ${current_price:.2f}")
+                logger.debug(f"{pair} new peak: {fmt_price(current_price)}")
         else:  # SHORT thesis
             if current_price < self.peak_prices[pair]:
                 self.peak_prices[pair] = current_price
-                logger.debug(f"{pair} new low (short thesis): ${current_price:.2f}")
+                logger.debug(f"{pair} new low (short thesis): {fmt_price(current_price)}")
 
         # === CHECK EXIT CONDITIONS (based on THESIS direction) ===
 
@@ -472,9 +484,38 @@ class SLTPMonitor:
                 except Exception as e:
                     logger.warning(f"Failed to cancel TP order: {e}")
 
-            # Place market exit order - ALWAYS based on actual holding
+            # Place exit order - ALWAYS based on actual holding
             # If we hold asset (bought it), we SELL to exit
             exit_side = 'sell' if actual_side in ['long', 'buy'] else 'buy'
+
+            # For TAKE PROFIT exits: use limit order at TP price to guarantee profit
+            # Market sells on low-liquidity coins (BONK, PEPE) get terrible fills
+            # that can turn a TP into a loss due to spread/slippage
+            position = self.manager.get_position(pair)
+            use_limit_for_tp = (
+                reason == ExitReason.TAKE_PROFIT
+                and position
+                and position.get('take_profit', 0) > 0
+            )
+
+            if use_limit_for_tp:
+                tp_price = position['take_profit']
+                try:
+                    order = self.exchange.place_limit_order(pair, exit_side, quantity, tp_price)
+                    fill_price = tp_price  # Limit order fills at TP or better
+                    logger.info(f"TP limit exit placed: {pair} {exit_side} {quantity} @ {fmt_price(tp_price)}")
+
+                    # Track this as new TP order and continue monitoring
+                    order_id = order.get('id')
+                    if order_id:
+                        self.tp_order_ids[pair] = order_id
+                        logger.info(f"Re-tracking TP order {order_id} for {pair}")
+                        return {'success': True, 'pair': pair, 'reason': reason.value,
+                                'message': 'TP limit order placed, will fill at TP price'}
+                except Exception as e:
+                    logger.warning(f"TP limit exit failed ({e}), falling back to market sell")
+                    # Fall through to market order below
+
             order = self.exchange.place_market_order(pair, exit_side, quantity)
 
             fill_price = float(order.get('average') or order.get('price') or exit_info['exit_price'])
@@ -488,7 +529,7 @@ class SLTPMonitor:
             self.manager.remove_position(pair)
             self.stop_monitoring(pair)
 
-            logger.info(f"Exit executed: {pair} {reason.value} @ ${fill_price:.2f}, P&L: ${final_pnl:.2f}")
+            logger.info(f"Exit executed: {pair} {reason.value} @ {fmt_price(fill_price)}, P&L: ${final_pnl:.4f}")
 
             if self.on_exit:
                 self.on_exit(pair, reason, {
@@ -566,7 +607,7 @@ class SLTPMonitor:
 
             if order_id:
                 self.tp_order_ids[pair] = order_id
-                logger.info(f"TP order placed on exchange: {pair} {order_side} {quantity} @ ${take_profit:.2f}")
+                logger.info(f"TP order placed on exchange: {pair} {order_side} {quantity} @ {fmt_price(take_profit)}")
 
             return order_id
 

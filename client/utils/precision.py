@@ -116,3 +116,33 @@ def format_price(exchange: str, symbol: str, price: float) -> str:
 
     rounded = round_price(exchange, symbol, price)
     return f"{rounded:.{decimals}f}"
+
+
+def fmt_price(price: float) -> str:
+    """
+    Smart price formatting that adapts to price magnitude.
+    Works without knowing the exchange/symbol — ideal for logs and UI display.
+
+    Examples:
+        fmt_price(42150.50)   -> "$42,150.50"
+        fmt_price(1.2345)     -> "$1.2345"
+        fmt_price(0.5432)     -> "$0.5432"
+        fmt_price(0.000015)   -> "$0.00001500"
+        fmt_price(0.00000123) -> "$0.000001230"
+    """
+    if price == 0:
+        return "$0.00"
+
+    abs_price = abs(price)
+    sign = "-" if price < 0 else ""
+
+    if abs_price >= 100:
+        return f"{sign}${abs_price:,.2f}"
+    elif abs_price >= 1:
+        return f"{sign}${abs_price:.4f}"
+    elif abs_price >= 0.01:
+        return f"{sign}${abs_price:.6f}"
+    elif abs_price >= 0.0001:
+        return f"{sign}${abs_price:.8f}"
+    else:
+        return f"{sign}${abs_price:.10f}"

@@ -11,6 +11,7 @@ from client.config import (
     MAX_DAILY_DRAWDOWN_PERCENT, MAX_WEEKLY_DRAWDOWN_PERCENT,
     CIRCUIT_BREAKER_COOLDOWN_HOURS, MAX_CONSECUTIVE_LOSSES, MIN_WIN_RATE_THRESHOLD
 )
+from client.utils.precision import fmt_price
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ class PositionManager:
             }
 
             market_label = f"[{market.upper()}]" if market != "spot" else ""
-            logger.info(f"Position added: {pair} {side} {quantity:.6f} @ ${entry_price:.2f} {market_label} (fee: ${entry_fee:.4f})")
+            logger.info(f"Position added: {pair} {side} {quantity:.6f} @ {fmt_price(entry_price)} {market_label} (fee: ${entry_fee:.4f})")
             self._save_positions()
 
     def flip_position(
@@ -139,7 +140,7 @@ class PositionManager:
             position['sl_update_time'] = datetime.utcnow().isoformat()
 
             self._save_positions()
-            logger.info(f"{pair} SL updated ({reason}): ${old_sl:.2f} -> ${new_sl:.2f}")
+            logger.info(f"{pair} SL updated ({reason}): {fmt_price(old_sl)} -> {fmt_price(new_sl)}")
             return True
 
     def get_thesis(self, pair: str) -> Optional[str]:
