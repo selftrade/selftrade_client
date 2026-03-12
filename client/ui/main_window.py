@@ -2097,15 +2097,17 @@ class MainWindow(QMainWindow):
         self._log(f"Circuit breaker: will pause after {value} consecutive losses")
 
     def _on_reset_circuit_breaker(self):
-        """Reset circuit breaker — resume trading and clear loss counter"""
+        """Reset circuit breaker — resume trading and clear loss/win-rate counters"""
         self._consecutive_losses = 0
         self._trading_halted = False
         self._halt_reason = ""
         # Also reset in position manager if available
-        # Set bypass flag in position manager so check_circuit_breaker() allows next trade
         if hasattr(self, 'position_manager') and self.position_manager:
             self.position_manager._circuit_breaker_bypassed = True
-        self._log("Circuit breaker reset — trading resumed, next signal will execute")
+            # Clear stale trade history so old losses don't keep triggering win-rate breaker
+            self.position_manager.trade_history.clear()
+            self.position_manager._save_positions()
+        self._log("Circuit breaker reset — trading resumed, loss streak and win rate cleared")
 
     def _refresh_portfolio(self):
         """Refresh portfolio display - uses background thread"""

@@ -617,10 +617,11 @@ class PositionManager:
         # CHECK 3: Consecutive losses
         # Use UI override if set, otherwise config default
         max_losses = self.max_consecutive_losses_override or MAX_CONSECUTIVE_LOSSES
-        # Skip if user manually reset the circuit breaker
-        if self._circuit_breaker_bypassed:
+        # Skip if user manually reset the circuit breaker (bypasses BOTH loss streak AND win rate)
+        bypass_active = self._circuit_breaker_bypassed
+        if bypass_active:
             self._circuit_breaker_bypassed = False  # One-time bypass, resets after first allowed trade
-            logger.info(f"Circuit breaker bypassed by user reset (consecutive losses: {consecutive_losses})")
+            logger.info(f"Circuit breaker fully bypassed by user reset (consecutive losses: {consecutive_losses}, win rate: {win_rate:.0%})")
         elif consecutive_losses >= max_losses:
             # Check if enough cooldown time has passed since the last loss
             last_loss_time = None
@@ -657,8 +658,8 @@ class PositionManager:
                 logger.error(result['reason'])
                 return result
 
-        # CHECK 4: Win rate (only if 10+ trades)
-        if len(recent_trades) >= 10 and win_rate < MIN_WIN_RATE_THRESHOLD:
+        # CHECK 4: Win rate (only if 10+ trades, skip if user bypassed)
+        if not bypass_active and len(recent_trades) >= 10 and win_rate < MIN_WIN_RATE_THRESHOLD:
             result['trading_allowed'] = False
             result['reason'] = f"CIRCUIT BREAKER: Win rate {win_rate:.0%} below {MIN_WIN_RATE_THRESHOLD:.0%}"
             logger.error(result['reason'])
