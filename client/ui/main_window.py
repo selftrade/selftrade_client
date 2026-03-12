@@ -3637,32 +3637,9 @@ class MainWindow(QMainWindow):
 
                         self._log(f"📊 [SPOT] {pair}: NEW (orphan) {amount:.6f} @ {fmt_price(current_price)} (${usdt_value:.2f})")
 
-                    # Start monitoring — restore TP order from saved data or find on exchange
+                    # Start local monitoring (no exchange TP orders — sell at market price)
                     if self.sl_tp_monitor:
-                        saved_tp_id = self.position_manager.get_tp_order_id(pair)
-                        if saved_tp_id:
-                            self.sl_tp_monitor.start_monitoring(pair, saved_tp_id)
-                            self._log(f"   ↳ Restored TP order {saved_tp_id}")
-                        else:
-                            # No saved TP order — check if exchange has open orders for this pair
-                            try:
-                                open_orders = self.exchange_client.get_open_orders(pair)
-                                if open_orders:
-                                    tp_id = open_orders[0].get('id', '')
-                                    self.sl_tp_monitor.start_monitoring(pair, tp_id)
-                                    self._log(f"   ↳ Found existing TP order on exchange: {tp_id}")
-                                else:
-                                    # No TP order on exchange — place one if we have saved position with TP
-                                    self.sl_tp_monitor.start_monitoring(pair)
-                                    if self.position_manager.has_position(pair):
-                                        pos = self.position_manager.get_position(pair)
-                                        if pos and pos.get('take_profit', 0) > 0:
-                                            tp_id = self.sl_tp_monitor.place_tp_order_on_exchange(pair)
-                                            if tp_id:
-                                                self._log(f"   ↳ Placed new TP order: {tp_id}")
-                            except Exception as e:
-                                logger.warning(f"Could not check/place TP order for {pair}: {e}")
-                                self.sl_tp_monitor.start_monitoring(pair)
+                        self.sl_tp_monitor.start_monitoring(pair)
 
                     synced_count += 1
 
@@ -3794,40 +3771,9 @@ class MainWindow(QMainWindow):
 
                             synced_count += 1
 
-                            # STEP 5: Place SL/TP orders on futures exchange using current SL/TP
-                            # (whether saved or freshly created)
-                            pos_data = self.position_manager.get_position(pair)
-                            stop_loss = pos_data['stop_loss']
-                            take_profit = pos_data['take_profit']
-                            sl_order_side = 'sell' if pos_side in ['long', 'buy'] else 'buy'
-                            tp_order_side = sl_order_side
-
-                            sl_order_id = None
-                            tp_order_id = None
-
-                            try:
-                                sl_order = self.exchange_client.set_futures_stop_loss(
-                                    pair, sl_order_side, stop_loss, amount
-                                )
-                                sl_order_id = sl_order.get('id')
-                                self._log(f"   ✅ SL order placed: {sl_order_side} @ ${stop_loss:.4f}")
-                            except Exception as e:
-                                self._log(f"   ⚠️ Failed to place SL order: {e}")
-                                logger.warning(f"Futures SL order failed for {pair}: {e}")
-
-                            try:
-                                tp_order = self.exchange_client.set_futures_take_profit(
-                                    pair, tp_order_side, take_profit, amount
-                                )
-                                tp_order_id = tp_order.get('id')
-                                self._log(f"   ✅ TP order placed: {tp_order_side} @ ${take_profit:.4f}")
-                            except Exception as e:
-                                self._log(f"   ⚠️ Failed to place TP order: {e}")
-                                logger.warning(f"Futures TP order failed for {pair}: {e}")
-
-                            # Start monitoring (as backup to exchange orders)
+                            # Start local monitoring (no exchange SL/TP orders — sell at market price)
                             if self.sl_tp_monitor:
-                                self.sl_tp_monitor.start_monitoring(pair, tp_order_id)
+                                self.sl_tp_monitor.start_monitoring(pair)
 
                 except Exception as e:
                     logger.error(f"Failed to sync futures positions: {e}")

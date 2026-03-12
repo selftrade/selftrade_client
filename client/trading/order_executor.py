@@ -35,7 +35,7 @@ class OrderExecutor:
         self.monitor = sl_tp_monitor
 
         # Configuration for hybrid approach
-        self.place_tp_on_exchange = True  # Place TP limit orders on exchange
+        self.place_tp_on_exchange = False  # Monitor TP locally — sell at market price (captures moves past TP)
         self.use_trailing_stop = True     # Enable trailing stop
 
         # Anti-front-running: Random execution delay (disabled by default)
@@ -376,13 +376,13 @@ class OrderExecutor:
             # Prevents executing trades when signal is from wrong exchange
             # Tiered threshold: sub-cent coins have wider spreads
             if entry_price < 0.001:
-                PRICE_MISMATCH_THRESHOLD = 6.0   # BONK/PEPE/SHIB/FLOKI — spread is 3-5%
+                PRICE_MISMATCH_THRESHOLD = 5.0   # BONK/PEPE/SHIB/FLOKI — spread is 3-5%
             elif entry_price < 0.01:
-                PRICE_MISMATCH_THRESHOLD = 4.0   # Other micro-price coins
+                PRICE_MISMATCH_THRESHOLD = 3.0   # Other micro-price coins
             elif entry_price < 1.0:
-                PRICE_MISMATCH_THRESHOLD = 3.0   # Small coins <$1
+                PRICE_MISMATCH_THRESHOLD = 2.0   # Small coins <$1
             else:
-                PRICE_MISMATCH_THRESHOLD = 1.5   # Normal coins — keep strict
+                PRICE_MISMATCH_THRESHOLD = 1.5   # Normal coins
 
             try:
                 actual_price = self.exchange.get_current_price(pair)
@@ -400,17 +400,34 @@ class OrderExecutor:
                 # Log EVERY price check for debugging
                 logger.info(f"PRICE CHECK {pair}: Signal=${entry_price:.4f} vs Exchange=${actual_price:.4f} (diff={price_diff_pct:.2f}%)")
 
-                # STRICT: 1.5% max to prevent catastrophic losses
+                # Check 1: Absolute price mismatch (exchange data error or wrong pair)
                 if price_diff_pct > PRICE_MISMATCH_THRESHOLD:
                     logger.warning(f"❌ PRICE MISMATCH BLOCKED {pair}: Signal ${entry_price:.4f} vs Exchange ${actual_price:.4f} ({price_diff_pct:.2f}% diff > {PRICE_MISMATCH_THRESHOLD}%)")
                     return {
                         'success': False,
-                        'reason': f"Price mismatch: Signal ${entry_price:.2f} vs Exchange ${actual_price:.2f} ({price_diff_pct:.1f}% diff) - server may be using wrong exchange",
+                        'reason': f"Price mismatch: Signal ${entry_price:.2f} vs Exchange ${actual_price:.2f} ({price_diff_pct:.1f}% diff)",
                         'order': None,
                         'price_mismatch': True
                     }
+
+                # Check 2: Directional slippage — reject if actual price is WORSE than signal
+                # For LONG: actual > signal means we'd overpay; for SHORT: actual < signal means we'd undersell
+                MAX_ADVERSE_SLIPPAGE = 0.5  # Max 0.5% worse than signal entry
+                if side == 'buy':
+                    adverse_pct = (actual_price - entry_price) / entry_price * 100
                 else:
-                    logger.info(f"✅ Price check PASSED for {pair} (diff={price_diff_pct:.2f}% < {PRICE_MISMATCH_THRESHOLD}%)")
+                    adverse_pct = (entry_price - actual_price) / entry_price * 100
+
+                if adverse_pct > MAX_ADVERSE_SLIPPAGE:
+                    logger.warning(f"❌ ADVERSE SLIPPAGE BLOCKED {pair}: Signal ${entry_price:.4f} vs Exchange ${actual_price:.4f} ({adverse_pct:.2f}% worse)")
+                    return {
+                        'success': False,
+                        'reason': f"Price moved against us: Signal ${entry_price:.2f} vs Exchange ${actual_price:.2f} ({adverse_pct:.1f}% worse)",
+                        'order': None,
+                        'price_mismatch': True
+                    }
+
+                logger.info(f"✅ Price check PASSED for {pair} (diff={price_diff_pct:.2f}%, adverse={adverse_pct:.2f}%)")
             except Exception as e:
                 logger.error(f"⚠️ PRICE CHECK FAILED for {pair}: {e} - BLOCKING trade for safety")
                 return {
@@ -1194,27 +1211,13 @@ class OrderExecutor:
 
         logger.info(f"FUTURES LONG executed: {pair} {quantity:.6f} @ ${fill_price:.4f} | SL: ${stop_loss:.4f} | TP: ${take_profit:.4f}")
 
-        # Set SL/TP orders on futures exchange
+        # All SL/TP monitored locally — no exchange orders (sell at market price, not stale limit)
         sl_order_id = None
         tp_order_id = None
 
-        try:
-            sl_order = self.exchange.set_futures_stop_loss(pair, 'sell', stop_loss, quantity)
-            sl_order_id = sl_order.get('id')
-            logger.info(f"Futures SL order placed: sell @ ${stop_loss:.4f}")
-        except Exception as e:
-            logger.warning(f"Failed to place futures SL order: {e} - will monitor locally")
-
-        try:
-            tp_order = self.exchange.set_futures_take_profit(pair, 'sell', take_profit, quantity)
-            tp_order_id = tp_order.get('id')
-            logger.info(f"Futures TP order placed: sell @ ${take_profit:.4f}")
-        except Exception as e:
-            logger.warning(f"Failed to place futures TP order: {e} - will monitor locally")
-
         if self.monitor:
-            self.monitor.start_monitoring(pair, tp_order_id)
-            logger.info(f"Started backup SL/TP monitoring for futures {pair}")
+            self.monitor.start_monitoring(pair)
+            logger.info(f"Started local SL/TP monitoring for futures {pair}")
 
         return {
             'success': True,
@@ -1353,30 +1356,13 @@ class OrderExecutor:
 
         logger.info(f"FUTURES SHORT executed: {pair} {quantity:.6f} @ ${fill_price:.4f} | SL: ${stop_loss:.4f} | TP: ${take_profit:.4f}")
 
-        # Set SL/TP orders on futures exchange
+        # All SL/TP monitored locally — no exchange orders (sell at market price, not stale limit)
         sl_order_id = None
         tp_order_id = None
 
-        try:
-            # Place stop loss order on futures
-            sl_order = self.exchange.set_futures_stop_loss(pair, 'buy', stop_loss, quantity)
-            sl_order_id = sl_order.get('id')
-            logger.info(f"Futures SL order placed: buy @ ${stop_loss:.4f}")
-        except Exception as e:
-            logger.warning(f"Failed to place futures SL order: {e} - will monitor locally")
-
-        try:
-            # Place take profit order on futures
-            tp_order = self.exchange.set_futures_take_profit(pair, 'buy', take_profit, quantity)
-            tp_order_id = tp_order.get('id')
-            logger.info(f"Futures TP order placed: buy @ ${take_profit:.4f}")
-        except Exception as e:
-            logger.warning(f"Failed to place futures TP order: {e} - will monitor locally")
-
-        # Start local monitoring as backup
         if self.monitor:
-            self.monitor.start_monitoring(pair, tp_order_id)
-            logger.info(f"Started backup SL/TP monitoring for futures {pair}")
+            self.monitor.start_monitoring(pair)
+            logger.info(f"Started local SL/TP monitoring for futures {pair}")
 
         return {
             'success': True,
