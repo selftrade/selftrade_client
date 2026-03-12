@@ -592,8 +592,8 @@ class MainWindow(QMainWindow):
             enabled=True,
             activation_pct=2.5,      # Activate trailing after 2.5% profit (was 1%)
             trail_pct=1.5,           # Trail 1.5% behind peak (was 0.5%)
-            breakeven_pct=1.5,       # Move SL to breakeven after 1.5% profit (was 0.5%)
-            breakeven_buffer_pct=0.3 # Add 0.3% buffer above entry for fees (was 0.1%)
+            breakeven_pct=2.5,       # Default breakeven (overridden per-asset by ASSET_BREAKEVEN_PCT)
+            breakeven_buffer_pct=0.5 # Add 0.5% buffer above entry to cover round-trip fees
         )
 
         # State
@@ -3578,8 +3578,8 @@ class MainWindow(QMainWindow):
             # STEP 2: Get SPOT holdings from exchange
             self._log("📡 Fetching SPOT balances...")
             try:
-                balances = self.exchange_client.get_all_balances(min_value_usdt=5.0)
-                self._log(f"   Found {len(balances)} asset(s) with value > $5")
+                balances = self.exchange_client.get_all_balances(min_value_usdt=1.0)
+                self._log(f"   Found {len(balances)} asset(s) with value > $1")
                 logger.info(f"SPOT balances: {balances}")
             except Exception as e:
                 self._log(f"   ⚠️ Failed to fetch SPOT balances: {e}")
@@ -3635,9 +3635,32 @@ class MainWindow(QMainWindow):
 
                         self._log(f"📊 [SPOT] {pair}: NEW (orphan) {amount:.6f} @ {fmt_price(current_price)} (${usdt_value:.2f})")
 
-                    # Start monitoring
+                    # Start monitoring — restore TP order from saved data or find on exchange
                     if self.sl_tp_monitor:
-                        self.sl_tp_monitor.start_monitoring(pair)
+                        saved_tp_id = self.position_manager.get_tp_order_id(pair)
+                        if saved_tp_id:
+                            self.sl_tp_monitor.start_monitoring(pair, saved_tp_id)
+                            self._log(f"   ↳ Restored TP order {saved_tp_id}")
+                        else:
+                            # No saved TP order — check if exchange has open orders for this pair
+                            try:
+                                open_orders = self.exchange_client.get_open_orders(pair)
+                                if open_orders:
+                                    tp_id = open_orders[0].get('id', '')
+                                    self.sl_tp_monitor.start_monitoring(pair, tp_id)
+                                    self._log(f"   ↳ Found existing TP order on exchange: {tp_id}")
+                                else:
+                                    # No TP order on exchange — place one if we have saved position with TP
+                                    self.sl_tp_monitor.start_monitoring(pair)
+                                    if self.position_manager.has_position(pair):
+                                        pos = self.position_manager.get_position(pair)
+                                        if pos and pos.get('take_profit', 0) > 0:
+                                            tp_id = self.sl_tp_monitor.place_tp_order_on_exchange(pair)
+                                            if tp_id:
+                                                self._log(f"   ↳ Placed new TP order: {tp_id}")
+                            except Exception as e:
+                                logger.warning(f"Could not check/place TP order for {pair}: {e}")
+                                self.sl_tp_monitor.start_monitoring(pair)
 
                     synced_count += 1
 

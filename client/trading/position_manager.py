@@ -58,6 +58,7 @@ class PositionManager:
                 'stop_loss': stop_loss,
                 'take_profit': take_profit,
                 'order_id': order_id,
+                'tp_order_id': None,             # TP limit order on exchange (persisted for restart)
                 'exchange': exchange,
                 'entry_fee': entry_fee,
                 'entry_time': datetime.utcnow().isoformat(),
@@ -181,6 +182,22 @@ class PositionManager:
         """Check if position exists for pair - thread-safe"""
         with self._lock:
             return pair.upper() in self.positions
+
+    def set_tp_order_id(self, pair: str, tp_order_id: str):
+        """Save TP order ID to position (persisted across restarts) - thread-safe"""
+        with self._lock:
+            pair = pair.upper()
+            if pair in self.positions:
+                self.positions[pair]['tp_order_id'] = tp_order_id
+                self._save_positions()
+
+    def get_tp_order_id(self, pair: str) -> Optional[str]:
+        """Get saved TP order ID for a position - thread-safe"""
+        with self._lock:
+            pair = pair.upper()
+            if pair in self.positions:
+                return self.positions[pair].get('tp_order_id')
+            return None
 
     def update_unrealized_pnl(self, pair: str, current_price: float):
         """Update unrealized P&L for a position based on THESIS (including fees) - thread-safe"""

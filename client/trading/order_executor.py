@@ -548,6 +548,7 @@ class OrderExecutor:
             if side in ['long', 'buy']:
                 # Don't buy if we already have a LONG position (avoid stacking longs)
                 if existing_position and existing_position.get('side', '').lower() in ['long', 'buy']:
+                    logger.info(f"SKIP {pair}: Already have LONG position - waiting for SHORT or close")
                     return {
                         'success': False,
                         'reason': f"Already have LONG position for {pair} - wait for SHORT signal or close position",
@@ -598,6 +599,7 @@ class OrderExecutor:
             elif side in ['short', 'sell']:
                 # Don't sell if we already have a SHORT position (avoid stacking shorts)
                 if existing_position and existing_position.get('side', '').lower() in ['short', 'sell']:
+                    logger.info(f"SKIP {pair}: Already have SHORT position - waiting for LONG signal")
                     return {
                         'success': False,
                         'reason': f"Already have SHORT position for {pair} - wait for LONG signal",

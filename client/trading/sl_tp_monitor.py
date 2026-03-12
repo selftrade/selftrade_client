@@ -40,6 +40,21 @@ ASSET_ACTIVATION_PCT = {
     'WIFUSDT': 6.0, 'BONKUSDT': 6.0, 'FLOKIUSDT': 6.0,
 }
 
+# Per-asset breakeven thresholds — must be wide enough that normal noise doesn't trigger it
+# Rule: breakeven_pct ~= activation_pct * 0.6 (gives room to breathe before trailing kicks in)
+ASSET_BREAKEVEN_PCT = {
+    'BTCUSDT': 2.0, 'ETHUSDT': 2.0, 'BNBUSDT': 2.0,
+    # Mid-cap alts
+    'XRPUSDT': 2.5, 'SOLUSDT': 2.5, 'ADAUSDT': 2.5, 'AVAXUSDT': 2.5,
+    'LINKUSDT': 2.5, 'LTCUSDT': 2.5, 'TRXUSDT': 2.5, 'DOTUSDT': 2.5,
+    'SUIUSDT': 3.0, 'NEARUSDT': 3.0, 'APTUSDT': 3.0, 'INJUSDT': 3.0,
+    'ARBUSDT': 3.0, 'OPUSDT': 3.0, 'FETUSDT': 3.0, 'RENDERUSDT': 3.0,
+    'WLDUSDT': 3.0,
+    # Meme coins: need wide breakeven — 3-5% wicks are normal
+    'DOGEUSDT': 3.5, 'PEPEUSDT': 4.0, 'SHIBUSDT': 3.5,
+    'WIFUSDT': 4.0, 'BONKUSDT': 4.0, 'FLOKIUSDT': 4.0,
+}
+
 
 class TrailingStopConfig:
     """Configuration for trailing stop behavior"""
@@ -125,9 +140,18 @@ class SLTPMonitor:
 
         if tp_order_id:
             self.tp_order_ids[pair] = tp_order_id
+            # Persist TP order ID so it survives restart
+            self.manager.set_tp_order_id(pair, tp_order_id)
+        else:
+            # Restore TP order ID from saved position (survives client restart)
+            saved_tp_id = self.manager.get_tp_order_id(pair)
+            if saved_tp_id:
+                self.tp_order_ids[pair] = saved_tp_id
+                logger.info(f"Restored TP order ID for {pair}: {saved_tp_id}")
 
         logger.info(f"Started monitoring {pair} ({thesis.upper()}) - Entry: {fmt_price(thesis_entry)}, "
-                   f"SL: {fmt_price(position['stop_loss'])}, TP: {fmt_price(position['take_profit'])}")
+                   f"SL: {fmt_price(position['stop_loss'])}, TP: {fmt_price(position['take_profit'])}"
+                   f"{' (TP order on exchange)' if pair in self.tp_order_ids else ''}")
 
     def stop_monitoring(self, pair: str):
         """Stop monitoring a position"""
@@ -135,6 +159,8 @@ class SLTPMonitor:
         self.breakeven_activated.pop(pair, None)
         self.trailing_active.pop(pair, None)
         self.tp_order_ids.pop(pair, None)
+        # Clear persisted TP order ID
+        self.manager.set_tp_order_id(pair, None)
         logger.info(f"Stopped monitoring {pair}")
 
     def check_position(self, pair: str) -> Optional[Dict[str, Any]]:
@@ -221,6 +247,7 @@ class SLTPMonitor:
                             # Position still open on exchange
                             logger.warning(f"⚠️ {pair} FUTURES TP order missing but position still exists! Continuing to monitor...")
                             del self.tp_order_ids[pair]
+                            self.manager.set_tp_order_id(pair, None)
                             # DON'T remove position - continue monitoring
                         else:
                             # Futures position closed
@@ -265,6 +292,7 @@ class SLTPMonitor:
                                         logger.info(f"📋 {pair} has {len(open_orders)} open order(s) - tracking first as TP")
                                         # Track the existing open order as our TP
                                         self.tp_order_ids[pair] = open_orders[0].get('id', '')
+                                        self.manager.set_tp_order_id(pair, self.tp_order_ids[pair])
                                     else:
                                         # Used balance but no open orders — re-place TP
                                         logger.warning(f"⚠️ {pair} no open orders but used balance — re-placing TP")
@@ -425,8 +453,10 @@ class SLTPMonitor:
         if thesis is None:
             thesis = position.get('thesis', position['side']).lower()
 
-        # 1. Activate breakeven stop
-        if not self.breakeven_activated.get(pair) and profit_pct >= self.config.breakeven_pct:
+        # 1. Activate breakeven stop (per-asset threshold)
+        pair_key = pair.upper().replace('/', '')
+        be_pct = ASSET_BREAKEVEN_PCT.get(pair_key, self.config.breakeven_pct)
+        if not self.breakeven_activated.get(pair) and profit_pct >= be_pct:
             if thesis in ['long', 'buy']:
                 # Move SL to thesis entry + small buffer
                 new_sl = thesis_entry * (1 + self.config.breakeven_buffer_pct / 100)
@@ -509,6 +539,7 @@ class SLTPMonitor:
                     order_id = order.get('id')
                     if order_id:
                         self.tp_order_ids[pair] = order_id
+                        self.manager.set_tp_order_id(pair, order_id)
                         logger.info(f"Re-tracking TP order {order_id} for {pair}")
                         return {'success': True, 'pair': pair, 'reason': reason.value,
                                 'message': 'TP limit order placed, will fill at TP price'}
@@ -607,6 +638,8 @@ class SLTPMonitor:
 
             if order_id:
                 self.tp_order_ids[pair] = order_id
+                # Persist so it survives client restart
+                self.manager.set_tp_order_id(pair, order_id)
                 logger.info(f"TP order placed on exchange: {pair} {order_side} {quantity} @ {fmt_price(take_profit)}")
 
             return order_id
