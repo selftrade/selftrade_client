@@ -152,7 +152,13 @@ class ExchangeClient:
                             price = 1.0
                         else:
                             try:
-                                price = self.get_current_price(f"{currency}USDT")
+                                symbol = f"{currency}USDT"
+                                ccxt_symbol = f"{currency}/USDT"
+                                # Skip coins that don't have a USDT market on this exchange
+                                if hasattr(self.exchange, 'markets') and self.exchange.markets and ccxt_symbol not in self.exchange.markets:
+                                    logger.debug(f"Skipping {currency}: no {ccxt_symbol} market on {self.exchange_name}")
+                                    continue
+                                price = self.get_current_price(symbol)
                                 usdt_value = total_amount * price
                             except Exception:
                                 usdt_value = 0
