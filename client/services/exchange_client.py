@@ -447,39 +447,35 @@ class ExchangeClient:
 
             # MEXC has thin orderbooks that cause 4-5% slippage on market orders.
             # Always use capped limit orders on MEXC to prevent this.
+            # NEVER fall back to naked market orders — abort if capped limit fails.
             if self.exchange_name == 'mexc':
-                try:
-                    ticker = self.exchange.fetch_ticker(symbol)
-                    is_buy = side.lower() in ['buy', 'long']
+                ticker = self.exchange.fetch_ticker(symbol)
+                is_buy = side.lower() in ['buy', 'long']
 
-                    if is_buy:
-                        # Cap at 0.5% above current ask — fills immediately without walking the book
-                        ask = float(ticker.get('ask') or ticker.get('last') or 0)
-                        if ask <= 0:
-                            raise ValueError("Could not get ask price")
-                        raw_price = ask * 1.005
-                    else:
-                        # Cap at 0.5% below current bid — fills immediately without walking the book
-                        bid = float(ticker.get('bid') or ticker.get('last') or 0)
-                        if bid <= 0:
-                            raise ValueError("Could not get bid price")
-                        raw_price = bid * 0.995
+                if is_buy:
+                    # Cap at 0.1% above current ask — anything more eats our TP
+                    ask = float(ticker.get('ask') or ticker.get('last') or 0)
+                    if ask <= 0:
+                        raise ValueError("Could not get ask price from MEXC")
+                    raw_price = ask * 1.001
+                else:
+                    # Cap at 0.1% below current bid
+                    bid = float(ticker.get('bid') or ticker.get('last') or 0)
+                    if bid <= 0:
+                        raise ValueError("Could not get bid price from MEXC")
+                    raw_price = bid * 0.999
 
-                    limit_price = float(Decimal(str(raw_price)).quantize(
-                        Decimal(f"0.{'0' * price_precision}"), rounding=ROUND_DOWN
-                    ))
+                limit_price = float(Decimal(str(raw_price)).quantize(
+                    Decimal(f"0.{'0' * price_precision}"), rounding=ROUND_DOWN
+                ))
 
-                    if is_buy:
-                        order = self.exchange.create_limit_buy_order(symbol, rounded_amount, limit_price)
-                    else:
-                        order = self.exchange.create_limit_sell_order(symbol, rounded_amount, limit_price)
+                if is_buy:
+                    order = self.exchange.create_limit_buy_order(symbol, rounded_amount, limit_price)
+                else:
+                    order = self.exchange.create_limit_sell_order(symbol, rounded_amount, limit_price)
 
-                    logger.info(f"MEXC capped-limit {side} order placed: {symbol} {rounded_amount} @ {limit_price} (max 0.5% slip)")
-                    return order
-
-                except Exception as mexc_err:
-                    logger.warning(f"MEXC capped-limit order failed ({mexc_err}), falling back to market order")
-                    # Fall through to regular market order below
+                logger.info(f"MEXC capped-limit {side} order placed: {symbol} {rounded_amount} @ {limit_price} (max 0.1% slip)")
+                return order
 
             # Regular market order (Binance, Bybit, etc.)
             try:

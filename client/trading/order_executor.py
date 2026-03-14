@@ -376,13 +376,13 @@ class OrderExecutor:
             # Prevents executing trades when signal is from wrong exchange
             # Tiered threshold: sub-cent coins have wider spreads
             if entry_price < 0.001:
-                PRICE_MISMATCH_THRESHOLD = 5.0   # BONK/PEPE/SHIB/FLOKI — spread is 3-5%
+                PRICE_MISMATCH_THRESHOLD = 3.0   # PEPE/SHIB — micro-price spread
             elif entry_price < 0.01:
-                PRICE_MISMATCH_THRESHOLD = 3.0   # Other micro-price coins
+                PRICE_MISMATCH_THRESHOLD = 2.0   # Other micro-price coins
             elif entry_price < 1.0:
-                PRICE_MISMATCH_THRESHOLD = 2.0   # Small coins <$1
+                PRICE_MISMATCH_THRESHOLD = 1.5   # Small coins <$1
             else:
-                PRICE_MISMATCH_THRESHOLD = 1.5   # Normal coins
+                PRICE_MISMATCH_THRESHOLD = 0.8   # Normal coins (BTC, ETH, etc.)
 
             try:
                 actual_price = self.exchange.get_current_price(pair)
@@ -412,7 +412,7 @@ class OrderExecutor:
 
                 # Check 2: Directional slippage — reject if actual price is WORSE than signal
                 # For LONG: actual > signal means we'd overpay; for SHORT: actual < signal means we'd undersell
-                MAX_ADVERSE_SLIPPAGE = 0.5  # Max 0.5% worse than signal entry
+                MAX_ADVERSE_SLIPPAGE = 0.1  # Max 0.1% worse than signal — beyond this just skip
                 if side == 'buy':
                     adverse_pct = (actual_price - entry_price) / entry_price * 100
                 else:
@@ -809,11 +809,10 @@ class OrderExecutor:
         # Get fill price
         fill_price = float(order.get('average') or order.get('price') or entry_price)
 
-        # === CRITICAL: Recalculate SL/TP based on actual fill price ===
-        # If there was slippage, the original SL/TP may be invalid
+        # === SLIPPAGE LOGGING ===
         slippage_pct = abs(fill_price - entry_price) / entry_price * 100 if entry_price > 0 else 0
 
-        if slippage_pct > 0.1:  # More than 0.1% slippage
+        if slippage_pct > 0.1:  # More than 0.1% slippage (informational)
             logger.info(f"Slippage detected: signal entry ${entry_price:.4f} -> fill ${fill_price:.4f} ({slippage_pct:.2f}%)")
 
         # Recalculate SL based on fill price - maintain same % distance
