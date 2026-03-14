@@ -580,20 +580,21 @@ class MainWindow(QMainWindow):
         self.order_executor: Optional[OrderExecutor] = None
         self.sl_tp_monitor: Optional[SLTPMonitor] = None
 
-        # CLEAR positions.json on startup - exchange is source of truth
-        # Positions will be synced from exchange when connected
-        cleared = self.position_manager.clear_all_positions()
-        if cleared > 0:
-            logger.info(f"Startup: Cleared {cleared} stale position(s) - will sync from exchange")
+        # KEEP positions.json on startup - it has the real entry price, SL, TP
+        # The sync function (_sync_positions_from_exchange) handles stale cleanup
+        loaded = self.position_manager.get_position_count()
+        if loaded > 0:
+            logger.info(f"Startup: Restored {loaded} position(s) from positions.json")
 
-        # Trailing stop configuration (FIXED - less aggressive for crypto volatility)
-        # Previous settings were too tight, causing early exits before TP
+        # Trailing stop configuration
+        # Key insight: breakeven was killing trades at +0.5% (barely covers fees)
+        # before TP at 9% could ever be hit. Let trades breathe.
         self.trailing_config = TrailingStopConfig(
             enabled=True,
-            activation_pct=2.5,      # Activate trailing after 2.5% profit (was 1%)
-            trail_pct=1.5,           # Trail 1.5% behind peak (was 0.5%)
-            breakeven_pct=2.5,       # Default breakeven (overridden per-asset by ASSET_BREAKEVEN_PCT)
-            breakeven_buffer_pct=0.5 # Add 0.5% buffer above entry to cover round-trip fees
+            activation_pct=6.0,      # Activate trailing after 6% profit (was 2.5% — too early)
+            trail_pct=2.0,           # Trail 2% behind peak (was 1.5%)
+            breakeven_pct=4.0,       # Default breakeven at 4% (was 2.5% — noise triggered it)
+            breakeven_buffer_pct=1.5 # 1.5% buffer above entry (was 0.5% — didn't cover fees)
         )
 
         # State

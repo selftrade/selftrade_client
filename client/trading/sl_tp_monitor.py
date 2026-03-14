@@ -22,37 +22,42 @@ class ExitReason(Enum):
 # Per-asset trailing stop percentages
 # BTC/ETH: tight noise (1-2% wicks), alts: medium (2-3%), meme: wide (3-5%)
 ASSET_TRAIL_PCT = {
-    'BTCUSDT': 1.5, 'ETHUSDT': 1.5, 'BNBUSDT': 1.8,
+    # Trail width: how far behind peak the trailing SL sits
+    # Wider = more room for pullbacks, narrower = locks in more profit
+    'BTCUSDT': 2.0, 'ETHUSDT': 2.0, 'BNBUSDT': 2.5,
     # Mid-cap alts: wider trail for bigger wicks
-    'XRPUSDT': 2.0, 'SOLUSDT': 2.0, 'ADAUSDT': 2.0, 'AVAXUSDT': 2.2,
-    'LINKUSDT': 2.0, 'LTCUSDT': 2.0, 'TRXUSDT': 2.0, 'DOTUSDT': 2.0,
-    'SUIUSDT': 2.5, 'NEARUSDT': 2.5, 'APTUSDT': 2.5, 'INJUSDT': 2.5,
-    'ARBUSDT': 2.5, 'OPUSDT': 2.5, 'FETUSDT': 2.5, 'RENDERUSDT': 2.5,
-    'WLDUSDT': 2.5,
+    'XRPUSDT': 2.5, 'SOLUSDT': 2.5, 'ADAUSDT': 2.5, 'AVAXUSDT': 2.8,
+    'LINKUSDT': 2.5, 'LTCUSDT': 2.5, 'TRXUSDT': 2.5, 'DOTUSDT': 2.5,
+    'SUIUSDT': 3.0, 'NEARUSDT': 3.0, 'APTUSDT': 3.0, 'INJUSDT': 3.0,
+    'ARBUSDT': 3.0, 'OPUSDT': 3.0, 'RENDERUSDT': 3.0,
     # Meme coins: WIDE trail (3-5% wicks are normal)
-    'DOGEUSDT': 3.0, 'PEPEUSDT': 4.0, 'SHIBUSDT': 3.5,
-    'WIFUSDT': 4.0, 'BONKUSDT': 4.0, 'FLOKIUSDT': 4.0,
+    'DOGEUSDT': 3.5, 'PEPEUSDT': 5.0, 'SHIBUSDT': 4.0,
 }
 
 ASSET_ACTIVATION_PCT = {
-    'BTCUSDT': 3.0, 'ETHUSDT': 3.0,
-    'DOGEUSDT': 5.0, 'PEPEUSDT': 6.0, 'SHIBUSDT': 5.0,
-    'WIFUSDT': 6.0, 'BONKUSDT': 6.0, 'FLOKIUSDT': 6.0,
+    # Trailing activation must be AFTER breakeven — only trail when trade is solidly in profit
+    # Old 3% for BTC meant trailing started immediately after breakeven → shaken out on pullbacks
+    'BTCUSDT': 6.0, 'ETHUSDT': 6.0, 'BNBUSDT': 6.0,
+    'XRPUSDT': 6.5, 'SOLUSDT': 6.5, 'ADAUSDT': 6.5, 'AVAXUSDT': 6.5,
+    'LINKUSDT': 6.5, 'LTCUSDT': 6.5, 'TRXUSDT': 6.5, 'DOTUSDT': 6.5,
+    'SUIUSDT': 7.0, 'NEARUSDT': 7.0, 'APTUSDT': 7.0, 'INJUSDT': 7.0,
+    'ARBUSDT': 7.0, 'OPUSDT': 7.0, 'RENDERUSDT': 7.0,
+    'DOGEUSDT': 8.0, 'PEPEUSDT': 9.0, 'SHIBUSDT': 8.0,
 }
 
 # Per-asset breakeven thresholds — must be wide enough that normal noise doesn't trigger it
 # Rule: breakeven_pct ~= activation_pct * 0.6 (gives room to breathe before trailing kicks in)
 ASSET_BREAKEVEN_PCT = {
-    'BTCUSDT': 2.0, 'ETHUSDT': 2.0, 'BNBUSDT': 2.0,
+    # Breakeven must be high enough that the trade has PROVEN momentum
+    # Old values (2-3%) triggered on normal noise → killed trades before TP
+    'BTCUSDT': 4.0, 'ETHUSDT': 4.0, 'BNBUSDT': 4.0,
     # Mid-cap alts
-    'XRPUSDT': 2.5, 'SOLUSDT': 2.5, 'ADAUSDT': 2.5, 'AVAXUSDT': 2.5,
-    'LINKUSDT': 2.5, 'LTCUSDT': 2.5, 'TRXUSDT': 2.5, 'DOTUSDT': 2.5,
-    'SUIUSDT': 3.0, 'NEARUSDT': 3.0, 'APTUSDT': 3.0, 'INJUSDT': 3.0,
-    'ARBUSDT': 3.0, 'OPUSDT': 3.0, 'FETUSDT': 3.0, 'RENDERUSDT': 3.0,
-    'WLDUSDT': 3.0,
-    # Meme coins: need wide breakeven — 3-5% wicks are normal
-    'DOGEUSDT': 3.5, 'PEPEUSDT': 4.0, 'SHIBUSDT': 3.5,
-    'WIFUSDT': 4.0, 'BONKUSDT': 4.0, 'FLOKIUSDT': 4.0,
+    'XRPUSDT': 4.5, 'SOLUSDT': 4.5, 'ADAUSDT': 4.5, 'AVAXUSDT': 4.5,
+    'LINKUSDT': 4.5, 'LTCUSDT': 4.5, 'TRXUSDT': 4.5, 'DOTUSDT': 4.5,
+    'SUIUSDT': 5.0, 'NEARUSDT': 5.0, 'APTUSDT': 5.0, 'INJUSDT': 5.0,
+    'ARBUSDT': 5.0, 'OPUSDT': 5.0, 'RENDERUSDT': 5.0,
+    # Meme coins
+    'DOGEUSDT': 6.0, 'PEPEUSDT': 7.0, 'SHIBUSDT': 6.0,
 }
 
 
@@ -62,10 +67,10 @@ class TrailingStopConfig:
     def __init__(
         self,
         enabled: bool = True,
-        activation_pct: float = 3.5,
-        trail_pct: float = 1.5,
+        activation_pct: float = 6.0,
+        trail_pct: float = 2.0,
         breakeven_pct: float = 4.0,
-        breakeven_buffer_pct: float = 1.0,
+        breakeven_buffer_pct: float = 1.5,
         pair: str = None  # If set, uses per-asset trail settings
     ):
         self.enabled = enabled
