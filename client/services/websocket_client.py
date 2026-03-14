@@ -135,7 +135,7 @@ class WebSocketClient:
         """Handle incoming WebSocket message"""
         msg_type = data.get('type')
 
-        if msg_type == 'signal':
+        if msg_type in ('signal', 'hold'):
             signal = data.get('data', {})
             logger.info(f"Signal received: {signal.get('pair')} {signal.get('side')}")
             if self.on_signal:
