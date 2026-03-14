@@ -114,12 +114,7 @@ PRECISION_RULES: Dict[str, Dict[str, Dict[str, int]]] = {
         "DOTUSDT": {"price": 3, "qty": 2},
         "ARBUSDT": {"price": 4, "qty": 1},
         "OPUSDT":  {"price": 4, "qty": 1},
-        "FETUSDT": {"price": 5, "qty": 0},
         "RENDERUSDT": {"price": 4, "qty": 1},
-        "WLDUSDT": {"price": 4, "qty": 1},
-        "BONKUSDT": {"price": 9, "qty": 0},
-        "FLOKIUSDT": {"price": 8, "qty": 0},
-        "WIFUSDT": {"price": 4, "qty": 1},
         "DEFAULT": {"price": 6, "qty": 2},
     },
     "mexc": {
@@ -144,12 +139,7 @@ PRECISION_RULES: Dict[str, Dict[str, Dict[str, int]]] = {
         "DOTUSDT": {"price": 3, "qty": 2},
         "ARBUSDT": {"price": 4, "qty": 1},
         "OPUSDT":  {"price": 4, "qty": 1},
-        "FETUSDT": {"price": 5, "qty": 0},
         "RENDERUSDT": {"price": 4, "qty": 1},
-        "WLDUSDT": {"price": 4, "qty": 1},
-        "BONKUSDT": {"price": 9, "qty": 0},
-        "FLOKIUSDT": {"price": 8, "qty": 0},
-        "WIFUSDT": {"price": 5, "qty": 1},
         "DEFAULT": {"price": 6, "qty": 3},
     },
     "bybit": {
@@ -174,12 +164,7 @@ PRECISION_RULES: Dict[str, Dict[str, Dict[str, int]]] = {
         "DOTUSDT": {"price": 3, "qty": 2},
         "ARBUSDT": {"price": 4, "qty": 1},
         "OPUSDT":  {"price": 4, "qty": 1},
-        "FETUSDT": {"price": 5, "qty": 0},
         "RENDERUSDT": {"price": 4, "qty": 1},
-        "WLDUSDT": {"price": 4, "qty": 1},
-        "BONKUSDT": {"price": 9, "qty": 0},
-        "FLOKIUSDT": {"price": 8, "qty": 0},
-        "WIFUSDT": {"price": 5, "qty": 1},
         "DEFAULT": {"price": 6, "qty": 3},
     }
 }
@@ -193,9 +178,9 @@ SUPPORTED_PAIRS: List[str] = [
     "ADAUSDT", "AVAXUSDT", "LINKUSDT", "LTCUSDT", "TRXUSDT", "DOTUSDT",
     "SUIUSDT", "NEARUSDT", "APTUSDT", "INJUSDT",
     # Tier 3: Newer / narrative tokens
-    "ARBUSDT", "OPUSDT", "FETUSDT", "RENDERUSDT", "WLDUSDT",
+    "ARBUSDT", "OPUSDT", "RENDERUSDT",
     # Tier 4: High-volatility meme coins
-    "PEPEUSDT", "SHIBUSDT", "WIFUSDT", "BONKUSDT", "FLOKIUSDT",
+    "PEPEUSDT", "SHIBUSDT",
 ]
 
 # ===================== EXCHANGE-SPECIFIC UNSUPPORTED PAIRS =====================
@@ -203,11 +188,8 @@ SUPPORTED_PAIRS: List[str] = [
 UNSUPPORTED_PAIRS: Dict[str, List[str]] = {
     "mexc": [
         "APTUSDT",    # Not listed on MEXC
-        "WLDUSDT",    # Not listed on MEXC
     ],
-    "bybit": [
-        "WLDUSDT",    # Not listed on Bybit
-    ],
+    "bybit": [],
     "binance": [],
 }
 
