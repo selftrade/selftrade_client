@@ -3,7 +3,7 @@ import os
 from typing import Dict, List
 
 # ===================== VERSION =====================
-VERSION = "1.0.1"
+VERSION = "1.1.0"
 VERSION_NAME = "SelfTrade Client"
 
 # ===================== SERVER =====================
