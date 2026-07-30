@@ -2267,9 +2267,9 @@ class MainWindow(QMainWindow):
                 self.conf_label.setText(f"📊 Volume: {vol_status} ({volume_ratio:.1f}x)")
                 self.conf_label.setStyleSheet("font-size: 14px; color: #808090; font-weight: 600;")
         else:
-            self.entry_label.setText(f"📍 Entry: ${entry:,.2f}")
-            self.sl_label.setText(f"🛑 Stop Loss: ${stop:,.2f}")
-            self.tp_label.setText(f"🎯 Take Profit: ${target:,.2f}")
+            self.entry_label.setText(f"📍 Entry: {fmt_price(entry)}")
+            self.sl_label.setText(f"🛑 Stop Loss: {fmt_price(stop)}")
+            self.tp_label.setText(f"🎯 Take Profit: {fmt_price(target)}")
             self.regime_label.setText(f"📈 Regime: {regime}")
 
             conf_color = '#00d4aa' if confidence >= 0.7 else '#ffd93d' if confidence >= 0.5 else '#ff6b6b'
@@ -2981,8 +2981,8 @@ class MainWindow(QMainWindow):
                 # Show thesis direction and flip indicator
                 flip_indicator = f" (↔{flip_count})" if flip_count > 0 else ""
                 lines.append(f"{emoji} {pair} {thesis}{flip_indicator}")
-                lines.append(f"   Entry: ${thesis_entry:,.2f} | Now: ${current:,.2f}")
-                lines.append(f"   SL: ${pos.get('stop_loss', 0):,.2f} | TP: ${pos.get('take_profit', 0):,.2f}")
+                lines.append(f"   Entry: {fmt_price(thesis_entry)} | Now: {fmt_price(current)}")
+                lines.append(f"   SL: {fmt_price(pos.get('stop_loss', 0))} | TP: {fmt_price(pos.get('take_profit', 0))}")
                 pnl_emoji = "📈" if pnl_net >= 0 else "📉"
                 lines.append(f"   {pnl_emoji} P&L: ${pnl_net:,.2f} ({pnl_pct:+.2f}%)")
                 lines.append("─" * 30)
